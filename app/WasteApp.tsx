@@ -1043,7 +1043,7 @@ function ProfileView({ user, loading, onLogin, onSignOut }: { user: User | null;
             <h1>기록을 이어서 관리하세요</h1>
             <p>로그인하면 기기를 바꿔도 활동 기록과 즐겨찾기를 이어갈 수 있어요.</p>
             <motion.button className="profile-login" type="button" whileTap={{ scale: 0.975 }} transition={spring} onClick={onLogin}><LogIn size={17} /> 로그인 또는 회원가입</motion.button>
-            <small className="guest-note"><ShieldCheck size={13} /> 촬영한 사진은 분석에만 사용되며, 버림 서버나 계정에 저장되지 않아요.</small>
+            <small className="guest-note"><ShieldCheck size={13} /> 촬영한 사진은 분석에만 사용되어 버림 서버나 계정에 저장되지 않으며, 로그인 정보는 인증에만 사용되고 Supabase가 안전하게 처리해요.</small>
           </>
         )}
       </div>
