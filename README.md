@@ -6,24 +6,24 @@
 
 ## 배포 주소
 
-[WasteSuperApp 실행하기](https://beorim-waste-guide.justcallmelight.chatgpt.site)
+[WasteSuperApp 실행하기](https://hanyang-univ-swai-hackathon-2026.vercel.app)
 
 ## 주요 기능
 
 - OpenStreetMap 실지도에서 주변 분리수거장과 쓰레기통 위치 확인
 - 브라우저 위치 권한을 통한 현재 위치 표시와 거리순 정렬
-- 실시간 후면 카메라 촬영 또는 이미지 업로드를 통한 품목 분석 체험
+- 실시간 후면 카메라 촬영 또는 이미지 업로드를 통한 Gemini 품목 분석
 - 품목별 단계형 분리배출 행동 요령 제공
 - 분석이 불확실할 때 뒷면 촬영, 흔들림 개선 등 추가 촬영 안내
 - AI가 확인한 시각 단서, 확신도의 한계, 공식 검증 출처 공개
 - 낮은 확신도에서는 추측하지 않고 판정을 보류하는 안전장치
-- 현재 MVP에서 사진을 서버로 전송하거나 저장하지 않는 개인정보 보호 구조
+- 분석 이미지를 일시적으로만 Gemini API에 전달하고 앱에 저장하지 않는 개인정보 보호 구조
 - 최근 분석 기록과 분리배출 활동 확인
 - 이메일·비밀번호 및 Google 계정 로그인, 세션 유지, 로그아웃
 - 로그인 없이도 모든 핵심 기능을 확인할 수 있는 게스트 모드
 - 데스크톱과 모바일 화면 대응
 
-> 현재 사진 분석 결과는 샘플 시나리오이며, 수거 지점은 위치 권한 허용 후 OpenStreetMap Overpass API의 실제 등록 데이터를 조회합니다.
+> 실제 사진은 Gemini 2.5 Flash-Lite로 분석합니다. `샘플 체험` 버튼은 API 장애 상황에서도 시연할 수 있는 고정 데모이며, 수거 지점은 위치 권한 허용 후 OpenStreetMap Overpass API의 실제 등록 데이터를 조회합니다.
 
 ## 카메라
 
@@ -31,7 +31,9 @@
 - 셔터를 누르면 현재 프레임을 촬영하며, 사진 보관함 선택은 별도 버튼으로 제공합니다.
 - 실시간 카메라를 사용할 수 없는 환경에서는 모바일 기기의 기본 카메라 입력으로 전환합니다.
 - 권한 창이 나타나지 않는 내장 브라우저에서도 `기기 카메라 열기` 버튼과 셔터를 바로 사용할 수 있습니다.
-- 촬영한 이미지는 브라우저 안에서만 미리보기로 사용하며 서버로 전송하거나 저장하지 않습니다.
+- 촬영한 이미지는 브라우저에서 최대 1600px JPEG로 축소한 뒤 서버를 거쳐 Gemini API에 전달합니다.
+- API 키는 서버 환경 변수에만 보관되며 브라우저 코드에 노출되지 않습니다.
+- 분석이 끝난 이미지를 앱 서버나 데이터베이스에 저장하지 않습니다. Google 무료 등급의 데이터 처리 정책은 Google AI Studio 약관을 함께 확인하세요.
 
 ## 위치 및 지도
 
@@ -55,8 +57,8 @@
 - **모르면 멈추기:** 확신도가 낮으면 재질을 추측하지 않고 추가 촬영을 요청합니다.
 - **근거를 보여주기:** 판정에 사용한 시각 단서와 확신도의 의미를 사용자에게 공개합니다.
 - **공식 기준 교차 검증:** 행동 요령은 환경부 분리배출 기준과 비교하여 확인합니다.
-- **개인정보 최소화:** 현재 MVP의 업로드 사진은 브라우저 미리보기에만 사용되며 서버로 전송되지 않습니다.
-- **한계 투명화:** 실제 AI 모델 연동 전 단계의 샘플 판정임을 결과 화면에 명시합니다.
+- **개인정보 최소화:** 이미지는 분석 요청에만 사용하고 앱 서버나 데이터베이스에 보관하지 않습니다.
+- **한계 투명화:** 사용 모델과 확신도를 결과 화면에 표시하고, 확신도 75% 미만은 자동으로 판정을 보류합니다.
 
 공식 검증 자료: [환경부 투명 페트병 분리배출 안내](https://www.me.go.kr/home/web/board/read.do?boardId=1421040&boardMasterId=713&menuId=10392)
 
@@ -68,14 +70,15 @@
 - Motion
 - Lucide React
 - Cloudflare Workers 호환 빌드
+- Gemini 2.5 Flash-Lite (사진 품목 인식)
 
 ## 실행 방법
 
 ### 1. 저장소 내려받기
 
 ```bash
-git clone https://github.com/justcallmelightt/HanyangUniv_SWAI_Hackerthon.git
-cd HanyangUniv_SWAI_Hackerthon
+git clone https://github.com/justcallmelightt/HanyangUniv_SWAI_Hackathon_2026.git
+cd HanyangUniv_SWAI_Hackathon_2026
 ```
 
 ### 2. 패키지 설치
@@ -110,6 +113,20 @@ http://localhost:3000
 npm run build
 npm run start
 ```
+
+## Gemini 사진 분석 설정
+
+1. [Google AI Studio](https://aistudio.google.com/apikey)에서 Gemini API 키를 발급합니다.
+2. 프로젝트 최상위의 `.env.local`에 아래 값을 추가합니다.
+
+```env
+GEMINI_API_KEY=발급받은_API_키
+GEMINI_MODEL=gemini-2.5-flash-lite
+```
+
+`GEMINI_API_KEY`에는 `NEXT_PUBLIC_` 접두사를 붙이지 마세요. 사진과 키는 `/api/analyze-waste` 서버 경로에서만 처리됩니다. Vercel에서는 `Project → Settings → Environment Variables`에 같은 값을 등록한 뒤 다시 배포합니다.
+
+Gemini 무료 등급은 요청 한도가 있으며, Google 정책에 따라 입력 데이터가 제품 개선에 사용될 수 있습니다. 대회 시연에는 개인 정보나 얼굴이 포함되지 않은 폐기물 사진을 사용하세요.
 
 ## 로그인 설정 (Supabase)
 

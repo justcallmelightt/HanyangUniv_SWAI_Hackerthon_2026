@@ -70,6 +70,39 @@ type UserLocation = { lat: number; lng: number; accuracy: number };
 type CollectionMeta = { source: string; radiusKm: number; fetchedAt: string; fallbackServers: number };
 type AuthMode = "login" | "signup";
 
+type WasteAnalysis = {
+  status: "confident" | "uncertain";
+  itemName: string;
+  material: string;
+  category: string;
+  confidence: number;
+  summary: string;
+  evidence: string[];
+  steps: Array<{ title: string; description: string }>;
+  followUp: string[];
+  caution: string;
+  model: string;
+};
+
+const sampleAnalysis: WasteAnalysis = {
+  status: "confident",
+  itemName: "투명 페트병",
+  material: "무색 PET",
+  category: "투명 페트병 전용 배출",
+  confidence: 92,
+  summary: "비우고, 헹구고, 라벨을 뗀 뒤 찌그러뜨려 배출하세요.",
+  evidence: ["투명한 음료 용기 형태", "재질 표시 PET 01", "분리 가능한 라벨"],
+  steps: [
+    { title: "내용물을 완전히 비워요", description: "남아 있는 음료는 싱크대에 버려주세요." },
+    { title: "물로 한 번 가볍게 헹궈요", description: "세제까지 사용할 필요는 없어요." },
+    { title: "라벨을 떼어 비닐류로 분리해요", description: "접착제가 남아도 괜찮아요." },
+    { title: "찌그러뜨린 뒤 뚜껑을 닫아요", description: "투명 페트병 전용 수거함에 넣어주세요." },
+  ],
+  followUp: ["용기 뒷면의 재질 표시가 보이도록 찍어주세요", "흔들리지 않게 물건 가까이에서 찍어주세요"],
+  caution: "지역별 배출 기준이 다를 수 있으니 지자체 안내를 함께 확인해주세요.",
+  model: "demo",
+};
+
 type Place = {
   id: string;
   name: string;
@@ -997,7 +1030,7 @@ function ProfileView({ user, loading, onLogin, onSignOut }: { user: User | null;
         <div className="principle-grid">
           <div><i>01</i><span><strong>모르면 멈추기</strong><small>낮은 확신도에서는 판정을 보류해요.</small></span></div>
           <div><i>02</i><span><strong>근거를 보여주기</strong><small>관찰 단서와 공식 출처를 함께 밝혀요.</small></span></div>
-          <div><i>03</i><span><strong>사진을 남기지 않기</strong><small>현재 MVP는 사진을 서버로 전송하지 않아요.</small></span></div>
+          <div><i>03</i><span><strong>사진을 남기지 않기</strong><small>분석 요청 후 사진을 보관하지 않아요.</small></span></div>
         </div>
       </section>
       <div className="settings-list">
@@ -1112,39 +1145,32 @@ function PlaceSheet({ place, onClose }: { place: Place; onClose: () => void }) {
   );
 }
 
-function ConfidentResult({ onUncertain, onDone, onRetry }: { onUncertain: () => void; onDone: () => void; onRetry: () => void }) {
+function ConfidentResult({ analysis, onDone, onRetry }: { analysis: WasteAnalysis; onDone: () => void; onRetry: () => void }) {
   const [evidenceOpen, setEvidenceOpen] = useState(false);
-  const steps = [
-    { icon: Droplets, title: "내용물을 완전히 비워요", desc: "남아 있는 음료는 싱크대에 버려주세요." },
-    { icon: RotateCcw, title: "물로 한 번 가볍게 헹궈요", desc: "세제까지 사용할 필요는 없어요." },
-    { icon: Layers3, title: "라벨을 떼어 비닐류로 분리해요", desc: "접착제가 남아도 괜찮아요." },
-    { icon: Bottle, title: "찌그러뜨린 뒤 뚜껑을 닫아요", desc: "투명 페트병 전용 수거함에 넣어주세요." },
-  ];
+  const stepIcons = [Droplets, RotateCcw, Layers3, Recycle, Bottle];
   return (
     <motion.div className="result-panel" initial={{ y: "100%" }} animate={{ y: 0 }} transition={spring}>
       <div className="result-grabber" />
       <div className="result-head">
         <div className="result-icon"><Bottle size={30} /></div>
         <div>
-          <div className="result-meta"><span className="confidence high"><i /> 확신도 92%</span><em>MVP 샘플 판정</em></div>
-          <h2>투명 페트병이에요</h2><p>무색 PET · 재활용 가능</p>
+          <div className="result-meta"><span className="confidence high"><i /> 확신도 {analysis.confidence}%</span><em>{analysis.model === "demo" ? "샘플 판정" : "Gemini 분석"}</em></div>
+          <h2>{analysis.itemName}이에요</h2><p>{analysis.material} · {analysis.category}</p>
         </div>
         <button type="button" aria-label="결과 닫기" onClick={onDone}><X size={20} /></button>
       </div>
-      <div className="result-summary"><Sparkles size={17} /><p><strong>한 줄 요약</strong>비우고, 헹구고, 라벨을 뗀 뒤 찌그러뜨려 배출하세요.</p></div>
+      <div className="result-summary"><Sparkles size={17} /><p><strong>한 줄 요약</strong>{analysis.summary}</p></div>
       <div className={`evidence-card ${evidenceOpen ? "open" : ""}`}>
         <motion.button type="button" aria-expanded={evidenceOpen} whileTap={{ scale: 0.985 }} transition={spring} onClick={() => setEvidenceOpen((open) => !open)}>
-          <span><ShieldCheck size={17} /> AI 판정 근거</span><em>3개 단서 확인</em><ChevronDown size={17} />
+          <span><ShieldCheck size={17} /> AI 판정 근거</span><em>{analysis.evidence.length}개 단서 확인</em><ChevronDown size={17} />
         </motion.button>
         <AnimatePresence initial={false}>
           {evidenceOpen && (
             <motion.div className="evidence-detail" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={spring}>
               <ul>
-                <li><i />투명한 음료 용기 형태</li>
-                <li><i />재질 표시 PET 01</li>
-                <li><i />분리 가능한 라벨 확인</li>
+                {analysis.evidence.map((item) => <li key={item}><i />{item}</li>)}
               </ul>
-              <p><strong>확신도는 정답을 보장하지 않아요.</strong> AI가 관찰한 단서의 일치 정도이며, 지역별 배출 기준이 다를 수 있어요.</p>
+              <p><strong>확신도는 정답을 보장하지 않아요.</strong> {analysis.caution}</p>
               <a href="https://www.me.go.kr/home/web/board/read.do?boardId=1421040&boardMasterId=713&menuId=10392" target="_blank" rel="noreferrer">
                 환경부 공식 기준으로 교차 검증 <ExternalLink size={13} />
               </a>
@@ -1154,13 +1180,16 @@ function ConfidentResult({ onUncertain, onDone, onRetry }: { onUncertain: () => 
       </div>
       <div className="action-plan-head"><span>행동 요령</span><em>약 40초</em></div>
       <div className="action-plan">
-        {steps.map((step, index) => (
+        {analysis.steps.map((step, index) => {
+          const StepIcon = stepIcons[index % stepIcons.length];
+          return (
           <div className="action-step" key={step.title}>
             <span className="step-index">{index + 1}</span>
-            <div className="step-icon"><step.icon size={20} /></div>
-            <div><strong>{step.title}</strong><p>{step.desc}</p></div>
+            <div className="step-icon"><StepIcon size={20} /></div>
+            <div><strong>{step.title}</strong><p>{step.description}</p></div>
           </div>
-        ))}
+          );
+        })}
       </div>
       <div className="result-actions">
         <motion.button className="primary-button" type="button" whileTap={{ scale: 0.98 }} transition={spring} onClick={onDone}>
@@ -1168,53 +1197,75 @@ function ConfidentResult({ onUncertain, onDone, onRetry }: { onUncertain: () => 
         </motion.button>
         <button className="secondary-button" type="button" onClick={onRetry}><RotateCcw size={17} /> 다시 찍기</button>
       </div>
-      <button className="uncertain-preview" type="button" onClick={onUncertain}>
-        <TriangleAlert size={16} /> AI가 확신하지 못했을 때의 안내 보기 <ChevronRight size={16} />
-      </button>
     </motion.div>
   );
 }
 
-function UncertainResult({ onRetry, onBack }: { onRetry: () => void; onBack: () => void }) {
+function UncertainResult({ analysis, onRetry }: { analysis: WasteAnalysis; onRetry: () => void }) {
   return (
     <motion.div className="result-panel uncertain-result" initial={{ y: "100%" }} animate={{ y: 0 }} transition={spring}>
       <div className="result-grabber" />
       <div className="uncertain-hero">
         <span className="uncertain-icon"><CircleHelp size={26} /></span>
-        <div className="hold-status"><strong>판정 보류</strong><span className="confidence low"><i /> 확신도 54%</span></div>
+        <div className="hold-status"><strong>판정 보류</strong><span className="confidence low"><i /> 확신도 {analysis.confidence}%</span></div>
         <h2>조금만 더 보여주세요</h2>
-        <p>플라스틱 용기로 보이지만, 재질 표시가 보이지 않아 정확한 판단이 어려워요.</p>
+        <p>{analysis.summary}</p>
       </div>
       <div className="hold-reason"><ShieldCheck size={17} /><p><strong>AI가 추측 대신 멈췄어요.</strong> 잘못 버리는 행동으로 이어지지 않도록 추가 정보부터 요청합니다.</p></div>
       <div className="mission-label"><Sparkles size={15} /> 정확도를 높이는 촬영 미션</div>
       <div className="mission-list">
-        <motion.button type="button" whileTap={{ scale: 0.98 }} transition={spring} onClick={onRetry}>
-          <span className="mission-number">1</span>
-          <span className="mission-visual back-label"><PackageOpen size={25} /></span>
-          <span><strong>용기 뒷면을 보여주세요</strong><small>삼각형 재질 표시와 숫자가 보이게 찍어주세요.</small></span>
-          <Camera size={19} />
-        </motion.button>
-        <motion.button type="button" whileTap={{ scale: 0.98 }} transition={spring} onClick={onRetry}>
-          <span className="mission-number">2</span>
-          <span className="mission-visual focus"><Crosshair size={25} /></span>
-          <span><strong>흔들림 없이 가까이 찍어주세요</strong><small>물건 하나가 화면의 70% 이상 보이면 좋아요.</small></span>
-          <Camera size={19} />
-        </motion.button>
+        {analysis.followUp.map((instruction, index) => (
+          <motion.button type="button" key={instruction} whileTap={{ scale: 0.98 }} transition={spring} onClick={onRetry}>
+            <span className="mission-number">{index + 1}</span>
+            <span className={`mission-visual ${index % 2 === 0 ? "back-label" : "focus"}`}>{index % 2 === 0 ? <PackageOpen size={25} /> : <Crosshair size={25} />}</span>
+            <span><strong>{instruction}</strong><small>안내한 단서가 화면 중앙에 선명하게 보이도록 해주세요.</small></span>
+            <Camera size={19} />
+          </motion.button>
+        ))}
       </div>
-      <div className="safety-note"><TriangleAlert size={17} /><p><strong>확실해질 때까지 버리지 마세요.</strong>재질이 다르면 배출 방법도 달라질 수 있어요.</p></div>
+      <div className="safety-note"><TriangleAlert size={17} /><p><strong>확실해질 때까지 버리지 마세요.</strong>{analysis.caution}</p></div>
       <div className="result-actions">
         <motion.button className="primary-button" type="button" whileTap={{ scale: 0.98 }} transition={spring} onClick={onRetry}>
           <Camera size={19} /> 안내대로 다시 찍기
         </motion.button>
-        <button className="secondary-button" type="button" onClick={onBack}><ArrowLeft size={17} /> 이전 결과로</button>
       </div>
     </motion.div>
   );
 }
 
+function prepareImage(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      const maxEdge = 1600;
+      const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext("2d");
+      if (!context) {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error("사진을 변환할 수 없습니다."));
+        return;
+      }
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(objectUrl);
+      resolve(canvas.toDataURL("image/jpeg", 0.82));
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("사진을 불러올 수 없습니다."));
+    };
+    image.src = objectUrl;
+  });
+}
+
 function Scanner({ onClose }: { onClose: () => void }) {
   const [state, setState] = useState<ScanState>("ready");
   const [preview, setPreview] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState<WasteAnalysis | null>(null);
+  const [analysisError, setAnalysisError] = useState("");
   const [cameraStatus, setCameraStatus] = useState<CameraStatus>("requesting");
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1288,27 +1339,51 @@ function Scanner({ onClose }: { onClose: () => void }) {
     };
   }, [startCamera, stopCamera]);
 
-  useEffect(() => {
-    return () => {
-      if (preview) URL.revokeObjectURL(preview);
-    };
-  }, [preview]);
-
-  function analyze() {
+  async function analyze(imageDataUrl?: string) {
     cameraRequestRef.current += 1;
     if (cameraTimeoutRef.current !== null) window.clearTimeout(cameraTimeoutRef.current);
     stopCamera();
+    setAnalysisError("");
     setState("analyzing");
     if (analysisTimerRef.current !== null) window.clearTimeout(analysisTimerRef.current);
-    analysisTimerRef.current = window.setTimeout(() => setState("result"), 1500);
+
+    if (!imageDataUrl) {
+      analysisTimerRef.current = window.setTimeout(() => {
+        setAnalysis(sampleAnalysis);
+        setState("result");
+      }, 900);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/analyze-waste", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageDataUrl }),
+      });
+      const data = await response.json() as { analysis?: WasteAnalysis; error?: string };
+      if (!response.ok || !data.analysis) throw new Error(data.error || "사진을 분석하지 못했습니다.");
+      setAnalysis(data.analysis);
+      setState(data.analysis.status === "confident" ? "result" : "uncertain");
+    } catch (error) {
+      setAnalysisError(error instanceof Error ? error.message : "사진 분석 중 오류가 발생했습니다.");
+      setState("ready");
+    }
   }
 
-  function handleFile(event: ChangeEvent<HTMLInputElement>) {
+  async function handleFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
-    if (preview) URL.revokeObjectURL(preview);
-    setPreview(URL.createObjectURL(file));
-    analyze();
+    setState("analyzing");
+    setAnalysisError("");
+    try {
+      const imageDataUrl = await prepareImage(file);
+      setPreview(imageDataUrl);
+      await analyze(imageDataUrl);
+    } catch (error) {
+      setAnalysisError(error instanceof Error ? error.message : "사진을 불러오지 못했습니다.");
+      setState("ready");
+    }
   }
 
   function capturePhoto() {
@@ -1329,14 +1404,16 @@ function Scanner({ onClose }: { onClose: () => void }) {
     }
 
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    if (preview) URL.revokeObjectURL(preview);
-    setPreview(canvas.toDataURL("image/jpeg", 0.9));
-    analyze();
+    const imageDataUrl = canvas.toDataURL("image/jpeg", 0.82);
+    setPreview(imageDataUrl);
+    void analyze(imageDataUrl);
   }
 
   function retry() {
     setState("ready");
     setPreview(null);
+    setAnalysis(null);
+    setAnalysisError("");
     if (galleryInput.current) galleryInput.current.value = "";
     if (cameraInput.current) cameraInput.current.value = "";
     window.setTimeout(() => void startCamera(), 120);
@@ -1404,14 +1481,22 @@ function Scanner({ onClose }: { onClose: () => void }) {
               <div><strong>사진을 살펴보고 있어요</strong><small>재질과 오염 상태를 확인하는 중</small></div>
             </motion.div>
           )}
+          {state === "ready" && analysisError && preview && (
+            <motion.div className="analysis-error" role="alert" initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={reduceMotion ? { duration: 0.15 } : spring}>
+              <TriangleAlert size={20} />
+              <div><strong>분석을 완료하지 못했어요</strong><span>{analysisError}</span></div>
+              <button type="button" onClick={() => void analyze(preview)}>다시 분석</button>
+              <button type="button" onClick={retry}>다른 사진</button>
+            </motion.div>
+          )}
         </AnimatePresence>
         {state === "ready" && (
           <>
-            <div className="photo-privacy"><ShieldCheck size={14} /> 현재 MVP는 사진을 서버로 전송하거나 저장하지 않아요</div>
+            <div className="photo-privacy"><ShieldCheck size={14} /> 사진은 분석 중에만 Gemini로 전송되며 버림이 저장하지 않아요</div>
             <div className="camera-controls">
               <button className="gallery-button" type="button" aria-label="사진 보관함에서 선택" onClick={() => galleryInput.current?.click()}><ImagePlus size={21} /></button>
               <motion.button className="shutter" type="button" aria-label={cameraStatus === "live" ? "사진 촬영" : "기기 카메라 열기"} whileTap={{ scale: 0.88 }} transition={spring} onClick={capturePhoto}><span /></motion.button>
-              <button className="demo-button" type="button" onClick={analyze}><Sparkles size={17} /><span>샘플<br />체험</span></button>
+              <button className="demo-button" type="button" onClick={() => void analyze()}><Sparkles size={17} /><span>샘플<br />체험</span></button>
             </div>
           </>
         )}
@@ -1420,8 +1505,8 @@ function Scanner({ onClose }: { onClose: () => void }) {
         <input ref={cameraInput} className="visually-hidden" type="file" accept="image/*" capture="environment" onChange={handleFile} />
       </div>
       <AnimatePresence>
-        {state === "result" && <ConfidentResult onUncertain={() => setState("uncertain")} onDone={onClose} onRetry={retry} />}
-        {state === "uncertain" && <UncertainResult onRetry={retry} onBack={() => setState("result")} />}
+        {state === "result" && analysis && <ConfidentResult analysis={analysis} onDone={onClose} onRetry={retry} />}
+        {state === "uncertain" && analysis && <UncertainResult analysis={analysis} onRetry={retry} />}
       </AnimatePresence>
     </motion.div>
   );
@@ -1687,4 +1772,3 @@ export function WasteApp() {
     </>
   );
 }
-
