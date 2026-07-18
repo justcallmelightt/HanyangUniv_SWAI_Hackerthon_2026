@@ -13,11 +13,13 @@ import {
   BottleWine as Bottle,
   Camera,
   Check,
+  ChevronDown,
   ChevronRight,
   CircleHelp,
   Clock3,
   Crosshair,
   Droplets,
+  ExternalLink,
   GlassWater,
   History,
   Home,
@@ -32,6 +34,7 @@ import {
   RotateCcw,
   ScanLine,
   Search,
+  ShieldCheck,
   Sparkles,
   TriangleAlert,
   UserRound,
@@ -248,6 +251,18 @@ function HomeView({
           <Recycle size={16} />
           <strong>12</strong>
         </div>
+      </section>
+
+      <section className="decision-flow" aria-label="버림이 해결하는 세 가지 망설임">
+        <div>
+          <span className="eyebrow">문제에서 출발한 UX</span>
+          <strong>버리기 직전, 세 번의 망설임을 한 번에 줄여요.</strong>
+        </div>
+        <ol>
+          <li><i>1</i><span><small>품목 판단</small>이게 무엇인지</span></li>
+          <li><i>2</i><span><small>행동 안내</small>어떻게 손질할지</span></li>
+          <li><i>3</i><span><small>장소 연결</small>어디에 버릴지</span></li>
+        </ol>
       </section>
 
       <motion.button
@@ -471,6 +486,17 @@ function ProfileView() {
         <h1>민준님</h1>
         <p>이번 달 12번의 정확한 분리배출을 실천했어요.</p>
       </div>
+      <section className="ai-principles">
+        <div className="principle-head">
+          <span><ShieldCheck size={18} /></span>
+          <div><small>RESPONSIBLE AI</small><strong>버림의 AI 사용 원칙</strong></div>
+        </div>
+        <div className="principle-grid">
+          <div><i>01</i><span><strong>모르면 멈추기</strong><small>낮은 확신도에서는 판정을 보류해요.</small></span></div>
+          <div><i>02</i><span><strong>근거를 보여주기</strong><small>관찰 단서와 공식 출처를 함께 밝혀요.</small></span></div>
+          <div><i>03</i><span><strong>사진을 남기지 않기</strong><small>현재 MVP는 사진을 서버로 전송하지 않아요.</small></span></div>
+        </div>
+      </section>
       <div className="settings-list">
         {["내 동네 설정", "분리배출 알림", "즐겨찾는 수거함", "도움말 및 제보"].map((item, index) => (
           <button type="button" key={item}>
@@ -583,6 +609,7 @@ function PlaceSheet({ place, onClose }: { place: Place; onClose: () => void }) {
 }
 
 function ConfidentResult({ onUncertain, onDone, onRetry }: { onUncertain: () => void; onDone: () => void; onRetry: () => void }) {
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
   const steps = [
     { icon: Droplets, title: "내용물을 완전히 비워요", desc: "남아 있는 음료는 싱크대에 버려주세요." },
     { icon: RotateCcw, title: "물로 한 번 가볍게 헹궈요", desc: "세제까지 사용할 필요는 없어요." },
@@ -594,10 +621,33 @@ function ConfidentResult({ onUncertain, onDone, onRetry }: { onUncertain: () => 
       <div className="result-grabber" />
       <div className="result-head">
         <div className="result-icon"><Bottle size={30} /></div>
-        <div><span className="confidence high"><i /> 확신도 92%</span><h2>투명 페트병이에요</h2><p>무색 PET · 재활용 가능</p></div>
+        <div>
+          <div className="result-meta"><span className="confidence high"><i /> 확신도 92%</span><em>MVP 샘플 판정</em></div>
+          <h2>투명 페트병이에요</h2><p>무색 PET · 재활용 가능</p>
+        </div>
         <button type="button" aria-label="결과 닫기" onClick={onDone}><X size={20} /></button>
       </div>
       <div className="result-summary"><Sparkles size={17} /><p><strong>한 줄 요약</strong>비우고, 헹구고, 라벨을 뗀 뒤 찌그러뜨려 배출하세요.</p></div>
+      <div className={`evidence-card ${evidenceOpen ? "open" : ""}`}>
+        <motion.button type="button" aria-expanded={evidenceOpen} whileTap={{ scale: 0.985 }} transition={spring} onClick={() => setEvidenceOpen((open) => !open)}>
+          <span><ShieldCheck size={17} /> AI 판정 근거</span><em>3개 단서 확인</em><ChevronDown size={17} />
+        </motion.button>
+        <AnimatePresence initial={false}>
+          {evidenceOpen && (
+            <motion.div className="evidence-detail" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={spring}>
+              <ul>
+                <li><i />투명한 음료 용기 형태</li>
+                <li><i />재질 표시 PET 01</li>
+                <li><i />분리 가능한 라벨 확인</li>
+              </ul>
+              <p><strong>확신도는 정답을 보장하지 않아요.</strong> AI가 관찰한 단서의 일치 정도이며, 지역별 배출 기준이 다를 수 있어요.</p>
+              <a href="https://www.me.go.kr/home/web/board/read.do?boardId=1421040&boardMasterId=713&menuId=10392" target="_blank" rel="noreferrer">
+                환경부 공식 기준으로 교차 검증 <ExternalLink size={13} />
+              </a>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
       <div className="action-plan-head"><span>행동 요령</span><em>약 40초</em></div>
       <div className="action-plan">
         {steps.map((step, index) => (
@@ -627,10 +677,11 @@ function UncertainResult({ onRetry, onBack }: { onRetry: () => void; onBack: () 
       <div className="result-grabber" />
       <div className="uncertain-hero">
         <span className="uncertain-icon"><CircleHelp size={26} /></span>
-        <span className="confidence low"><i /> 확신도 54%</span>
+        <div className="hold-status"><strong>판정 보류</strong><span className="confidence low"><i /> 확신도 54%</span></div>
         <h2>조금만 더 보여주세요</h2>
         <p>플라스틱 용기로 보이지만, 재질 표시가 보이지 않아 정확한 판단이 어려워요.</p>
       </div>
+      <div className="hold-reason"><ShieldCheck size={17} /><p><strong>AI가 추측 대신 멈췄어요.</strong> 잘못 버리는 행동으로 이어지지 않도록 추가 정보부터 요청합니다.</p></div>
       <div className="mission-label"><Sparkles size={15} /> 정확도를 높이는 촬영 미션</div>
       <div className="mission-list">
         <motion.button type="button" whileTap={{ scale: 0.98 }} transition={spring} onClick={onRetry}>
@@ -733,11 +784,14 @@ function Scanner({ onClose }: { onClose: () => void }) {
           )}
         </AnimatePresence>
         {state === "ready" && (
-          <div className="camera-controls">
-            <button className="gallery-button" type="button" aria-label="사진 보관함에서 선택" onClick={() => fileInput.current?.click()}><ImagePlus size={21} /></button>
-            <motion.button className="shutter" type="button" aria-label="사진 촬영" whileTap={{ scale: 0.88 }} transition={spring} onClick={() => fileInput.current?.click()}><span /></motion.button>
-            <button className="demo-button" type="button" onClick={analyze}><Sparkles size={17} /><span>샘플<br />체험</span></button>
-          </div>
+          <>
+            <div className="photo-privacy"><ShieldCheck size={14} /> 현재 MVP는 사진을 서버로 전송하거나 저장하지 않아요</div>
+            <div className="camera-controls">
+              <button className="gallery-button" type="button" aria-label="사진 보관함에서 선택" onClick={() => fileInput.current?.click()}><ImagePlus size={21} /></button>
+              <motion.button className="shutter" type="button" aria-label="사진 촬영" whileTap={{ scale: 0.88 }} transition={spring} onClick={() => fileInput.current?.click()}><span /></motion.button>
+              <button className="demo-button" type="button" onClick={analyze}><Sparkles size={17} /><span>샘플<br />체험</span></button>
+            </div>
+          </>
         )}
         <input ref={fileInput} className="visually-hidden" type="file" accept="image/*" capture="environment" onChange={handleFile} />
       </div>
