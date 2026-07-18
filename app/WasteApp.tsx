@@ -48,9 +48,12 @@ import {
   useRef,
   useState,
 } from "react";
+import type { Circle, CircleMarker, Map as LeafletMap } from "leaflet";
 
 type Tab = "home" | "map" | "history" | "profile";
 type ScanState = "ready" | "analyzing" | "result" | "uncertain";
+type LocationStatus = "idle" | "loading" | "granted" | "denied" | "unavailable";
+type UserLocation = { lat: number; lng: number; accuracy: number };
 
 type Place = {
   id: number;
@@ -62,6 +65,8 @@ type Place = {
   top: string;
   left: string;
   tone: "green" | "black" | "blue";
+  lat: number;
+  lng: number;
 };
 
 const places: Place[] = [
@@ -75,6 +80,8 @@ const places: Place[] = [
     top: "27%",
     left: "58%",
     tone: "green",
+    lat: 37.4669,
+    lng: 126.9306,
   },
   {
     id: 2,
@@ -86,6 +93,8 @@ const places: Place[] = [
     top: "54%",
     left: "27%",
     tone: "black",
+    lat: 37.4658,
+    lng: 126.9297,
   },
   {
     id: 3,
@@ -97,8 +106,27 @@ const places: Place[] = [
     top: "68%",
     left: "69%",
     tone: "blue",
+    lat: 37.4681,
+    lng: 126.9325,
   },
 ];
+
+const fallbackCenter: [number, number] = [37.4669, 126.9306];
+
+function distanceInMeters(from: UserLocation, place: Place) {
+  const earthRadius = 6_371_000;
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const latDelta = toRadians(place.lat - from.lat);
+  const lngDelta = toRadians(place.lng - from.lng);
+  const startLat = toRadians(from.lat);
+  const endLat = toRadians(place.lat);
+  const a = Math.sin(latDelta / 2) ** 2 + Math.cos(startLat) * Math.cos(endLat) * Math.sin(lngDelta / 2) ** 2;
+  return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatDistance(meters: number) {
+  return meters < 1_000 ? `${Math.round(meters / 10) * 10}m` : `${(meters / 1_000).toFixed(1)}km`;
+}
 
 const spring = {
   type: "spring" as const,
@@ -151,7 +179,25 @@ function Brand() {
   );
 }
 
-function Header({ onNotification, onBack }: { onNotification: () => void; onBack: () => void }) {
+function Header({
+  onNotification,
+  onBack,
+  locationStatus,
+  onLocationRequest,
+}: {
+  onNotification: () => void;
+  onBack: () => void;
+  locationStatus: LocationStatus;
+  onLocationRequest: () => void;
+}) {
+  const locationLabel = {
+    idle: "위치 켜기",
+    loading: "확인 중",
+    granted: "현재 위치",
+    denied: "권한 필요",
+    unavailable: "위치 오류",
+  }[locationStatus];
+
   return (
     <header className="topbar">
       <Brand />
@@ -159,9 +205,9 @@ function Header({ onNotification, onBack }: { onNotification: () => void; onBack
         <button className="back-to-landing" type="button" onClick={onBack}>
           <ArrowLeft size={14} /> 소개
         </button>
-        <button className="location-pill" type="button">
+        <button className={`location-pill ${locationStatus}`} type="button" onClick={onLocationRequest} disabled={locationStatus === "loading"}>
           <MapPin size={14} strokeWidth={2.4} />
-          신림동
+          {locationLabel}
           <ChevronRight size={14} />
         </button>
         <IconButton label="알림 보기" onClick={onNotification}>
@@ -176,40 +222,104 @@ function Header({ onNotification, onBack }: { onNotification: () => void; onBack
 function MiniMap({
   onPlace,
   onExpand,
+  userLocation,
 }: {
   onPlace: (place: Place) => void;
   onExpand?: () => void;
+  userLocation: UserLocation | null;
 }) {
+  const mapNode = useRef<HTMLDivElement>(null);
+  const mapInstance = useRef<LeafletMap | null>(null);
+  const userMarker = useRef<CircleMarker | null>(null);
+  const accuracyCircle = useRef<Circle | null>(null);
+  const leaflet = useRef<typeof import("leaflet") | null>(null);
+  const onPlaceRef = useRef(onPlace);
+  const [mapReady, setMapReady] = useState(false);
+
+  useEffect(() => {
+    onPlaceRef.current = onPlace;
+  }, [onPlace]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function initializeMap() {
+      if (!mapNode.current || mapInstance.current) return;
+      const L = await import("leaflet");
+      if (!active || !mapNode.current) return;
+      leaflet.current = L;
+
+      const map = L.map(mapNode.current, {
+        zoomControl: !onExpand,
+        attributionControl: true,
+        scrollWheelZoom: !onExpand,
+      }).setView(fallbackCenter, onExpand ? 15 : 16);
+
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      }).addTo(map);
+
+      places.forEach((place) => {
+        const color = place.tone === "green" ? "#76a92b" : place.tone === "blue" ? "#4d8bc5" : "#242924";
+        const marker = L.circleMarker([place.lat, place.lng], {
+          radius: 10,
+          color: "#ffffff",
+          weight: 3,
+          fillColor: color,
+          fillOpacity: 1,
+        }).addTo(map);
+        marker.bindTooltip(place.name, { direction: "top", offset: [0, -9] });
+        marker.on("click", () => onPlaceRef.current(place));
+      });
+
+      mapInstance.current = map;
+      window.setTimeout(() => map.invalidateSize(), 0);
+      setMapReady(true);
+    }
+
+    void initializeMap();
+    return () => {
+      active = false;
+      mapInstance.current?.remove();
+      mapInstance.current = null;
+      leaflet.current = null;
+    };
+  }, [onExpand]);
+
+  useEffect(() => {
+    const L = leaflet.current;
+    const map = mapInstance.current;
+    if (!L || !map || !mapReady) return;
+
+    userMarker.current?.remove();
+    accuracyCircle.current?.remove();
+    userMarker.current = null;
+    accuracyCircle.current = null;
+
+    if (!userLocation) return;
+    const point: [number, number] = [userLocation.lat, userLocation.lng];
+    accuracyCircle.current = L.circle(point, {
+      radius: Math.max(userLocation.accuracy, 20),
+      color: "#1778f2",
+      weight: 1,
+      fillColor: "#4098ff",
+      fillOpacity: 0.12,
+    }).addTo(map);
+    userMarker.current = L.circleMarker(point, {
+      radius: 8,
+      color: "#ffffff",
+      weight: 3,
+      fillColor: "#1778f2",
+      fillOpacity: 1,
+    }).addTo(map).bindTooltip("내 위치", { permanent: true, direction: "top", offset: [0, -8] });
+    map.flyTo(point, 16, { duration: 0.7 });
+  }, [mapReady, userLocation]);
+
   return (
-    <div className="map-canvas" role="img" aria-label="주변 분리배출 장소 지도">
-      <div className="map-grid" />
-      <div className="road road-one"><span>남부순환로</span></div>
-      <div className="road road-two"><span>문성로</span></div>
-      <div className="road road-three" />
-      <div className="map-block block-one" />
-      <div className="map-block block-two" />
-      <div className="map-block block-three" />
-      <div className="map-park"><span>도림천 산책로</span></div>
-      {places.map((place, index) => (
-        <motion.button
-          key={place.id}
-          type="button"
-          aria-label={`${place.name}, ${place.distance}`}
-          className={`map-marker marker-${place.tone}`}
-          style={{ top: place.top, left: place.left }}
-          initial={{ scale: 0, y: 12 }}
-          animate={{ scale: 1, y: 0 }}
-          transition={{ ...spring, delay: index * 0.07 }}
-          whileTap={{ scale: 0.86 }}
-          onClick={() => onPlace(place)}
-        >
-          {place.id === 1 ? <Recycle size={18} /> : <MapPin size={17} />}
-          {place.id === 1 && <span className="marker-label">가장 가까움</span>}
-        </motion.button>
-      ))}
-      <div className="current-location" aria-label="내 위치">
-        <span />
-      </div>
+    <div className="map-canvas" aria-label="OpenStreetMap 기반 주변 분리배출 장소 지도">
+      <div ref={mapNode} className="leaflet-map" />
+      <span className="map-data-badge">수거함 위치는 MVP 데모 데이터</span>
       {onExpand && (
         <motion.button
           className="expand-map"
@@ -229,11 +339,19 @@ function HomeView({
   onScan,
   onMap,
   onPlace,
+  userLocation,
 }: {
   onScan: () => void;
   onMap: () => void;
   onPlace: (place: Place) => void;
+  userLocation: UserLocation | null;
 }) {
+  const nearbyPlaces = userLocation
+    ? [...places].sort((a, b) => distanceInMeters(userLocation, a) - distanceInMeters(userLocation, b))
+    : places;
+  const nearestPlace = nearbyPlaces[0];
+  const nearestDistance = userLocation ? formatDistance(distanceInMeters(userLocation, nearestPlace)) : nearestPlace.distance;
+
   return (
     <motion.main
       className="view home-view"
@@ -301,16 +419,16 @@ function HomeView({
           <button type="button" onClick={onMap}>전체 지도 <ChevronRight size={16} /></button>
         </div>
         <div className="map-card">
-          <MiniMap onPlace={onPlace} onExpand={onMap} />
-          <button className="nearest-place" type="button" onClick={() => onPlace(places[0])}>
+          <MiniMap onPlace={onPlace} onExpand={onMap} userLocation={userLocation} />
+          <button className="nearest-place" type="button" onClick={() => onPlace(nearestPlace)}>
             <div className="place-icon"><Recycle size={20} /></div>
             <div className="place-copy">
-              <strong>{places[0].name}</strong>
-              <span>{places[0].type}</span>
+              <strong>{nearestPlace.name}</strong>
+              <span>{nearestPlace.type}</span>
             </div>
             <div className="place-distance">
-              <strong>{places[0].distance}</strong>
-              <span>{places[0].walk}</span>
+              <strong>{nearestDistance}</strong>
+              <span>{userLocation ? "직선거리" : nearestPlace.walk}</span>
             </div>
           </button>
         </div>
@@ -340,9 +458,28 @@ function HomeView({
   );
 }
 
-function MapView({ onPlace }: { onPlace: (place: Place) => void }) {
+function MapView({
+  onPlace,
+  userLocation,
+  locationStatus,
+  onLocationRequest,
+}: {
+  onPlace: (place: Place) => void;
+  userLocation: UserLocation | null;
+  locationStatus: LocationStatus;
+  onLocationRequest: () => void;
+}) {
   const [filter, setFilter] = useState("전체");
-  const [located, setLocated] = useState(false);
+  const nearbyPlaces = userLocation
+    ? [...places].sort((a, b) => distanceInMeters(userLocation, a) - distanceInMeters(userLocation, b))
+    : places;
+  const locationNotice = {
+    idle: "",
+    loading: "현재 위치를 확인하고 있어요",
+    granted: userLocation ? `내 위치 표시 완료 · 오차 약 ${Math.round(userLocation.accuracy)}m` : "내 위치를 표시했어요",
+    denied: "위치 권한이 거부됐어요 · 브라우저 설정에서 허용해주세요",
+    unavailable: "현재 위치를 확인할 수 없어요 · 잠시 후 다시 시도해주세요",
+  }[locationStatus];
 
   return (
     <motion.main
@@ -373,34 +510,36 @@ function MapView({ onPlace }: { onPlace: (place: Place) => void }) {
         </div>
       </div>
       <div className="full-map-wrap">
-        <MiniMap onPlace={onPlace} />
+        <MiniMap onPlace={onPlace} userLocation={userLocation} />
         <motion.button
-          className={`locate-button ${located ? "located" : ""}`}
+          className={`locate-button ${locationStatus}`}
           type="button"
-          aria-label="현재 위치로 이동"
+          aria-label={locationStatus === "granted" ? "현재 위치 다시 확인" : "위치 권한을 요청하고 현재 위치 표시"}
           whileTap={{ scale: 0.88 }}
           transition={spring}
-          onClick={() => setLocated(true)}
+          disabled={locationStatus === "loading"}
+          onClick={onLocationRequest}
         >
           <LocateFixed size={20} />
         </motion.button>
         <AnimatePresence>
-          {located && (
+          {locationNotice && (
             <motion.div
-              className="map-toast"
+              className={`map-toast ${locationStatus}`}
               initial={{ opacity: 0, y: 12, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0 }}
               transition={spring}
             >
-              <Check size={15} /> 현재 위치 기준으로 정렬했어요
+              {locationStatus === "granted" ? <Check size={15} /> : locationStatus === "loading" ? <span className="location-spinner" /> : <TriangleAlert size={15} />}
+              {locationNotice}
             </motion.div>
           )}
         </AnimatePresence>
       </div>
       <div className="place-list">
         <div className="list-title"><strong>가까운 순</strong><span>3곳</span></div>
-        {places.map((place) => (
+        {nearbyPlaces.map((place) => (
           <motion.button
             className="place-row"
             type="button"
@@ -418,8 +557,8 @@ function MapView({ onPlace }: { onPlace: (place: Place) => void }) {
               <small><i /> {place.status}</small>
             </div>
             <div className="place-distance">
-              <strong>{place.distance}</strong>
-              <span>{place.walk}</span>
+              <strong>{userLocation ? formatDistance(distanceInMeters(userLocation, place)) : place.distance}</strong>
+              <span>{userLocation ? "직선거리" : place.walk}</span>
             </div>
           </motion.button>
         ))}
@@ -849,6 +988,9 @@ function ProgramShell({
   onPlace,
   onNotification,
   onBack,
+  userLocation,
+  locationStatus,
+  onLocationRequest,
 }: {
   tab: Tab;
   onTabChange: (tab: Tab) => void;
@@ -856,6 +998,9 @@ function ProgramShell({
   onPlace: (place: Place) => void;
   onNotification: () => void;
   onBack: () => void;
+  userLocation: UserLocation | null;
+  locationStatus: LocationStatus;
+  onLocationRequest: () => void;
 }) {
   return (
     <motion.div
@@ -866,11 +1011,11 @@ function ProgramShell({
       transition={spring}
     >
       <div className="program-frame">
-        <Header onNotification={onNotification} onBack={onBack} />
+        <Header onNotification={onNotification} onBack={onBack} locationStatus={locationStatus} onLocationRequest={onLocationRequest} />
         <BottomNav tab={tab} onChange={onTabChange} onScan={onScan} />
         <AnimatePresence mode="wait">
-          {tab === "home" && <HomeView key="home" onScan={onScan} onMap={() => onTabChange("map")} onPlace={onPlace} />}
-          {tab === "map" && <MapView key="map" onPlace={onPlace} />}
+          {tab === "home" && <HomeView key="home" onScan={onScan} onMap={() => onTabChange("map")} onPlace={onPlace} userLocation={userLocation} />}
+          {tab === "map" && <MapView key="map" onPlace={onPlace} userLocation={userLocation} locationStatus={locationStatus} onLocationRequest={onLocationRequest} />}
           {tab === "history" && <HistoryView key="history" onScan={onScan} />}
           {tab === "profile" && <ProfileView key="profile" />}
         </AnimatePresence>
@@ -885,6 +1030,27 @@ export function WasteApp() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [notice, setNotice] = useState(false);
+  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
+  const [locationStatus, setLocationStatus] = useState<LocationStatus>("idle");
+
+  function requestLocation() {
+    if (!("geolocation" in navigator)) {
+      setLocationStatus("unavailable");
+      return;
+    }
+
+    setLocationStatus("loading");
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setUserLocation({ lat: coords.latitude, lng: coords.longitude, accuracy: coords.accuracy });
+        setLocationStatus("granted");
+      },
+      (error) => {
+        setLocationStatus(error.code === 1 ? "denied" : "unavailable");
+      },
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 },
+    );
+  }
 
   function changeTab(next: Tab) {
     setTab(next);
@@ -903,7 +1069,7 @@ export function WasteApp() {
     <>
       <AnimatePresence mode="wait">
         {!entered ? (
-          <LandingPage key="landing" onEnter={() => setEntered(true)} />
+          <LandingPage key="landing" onEnter={() => { setEntered(true); requestLocation(); }} />
         ) : (
           <ProgramShell
             key="program"
@@ -913,6 +1079,9 @@ export function WasteApp() {
             onPlace={setSelectedPlace}
             onNotification={() => setNotice(true)}
             onBack={leaveProgram}
+            userLocation={userLocation}
+            locationStatus={locationStatus}
+            onLocationRequest={requestLocation}
           />
         )}
       </AnimatePresence>
