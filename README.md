@@ -121,7 +121,7 @@ npm run start
 
 ```env
 GEMINI_API_KEY=발급받은_API_키
-GEMINI_MODEL=gemini-2.5-flash-lite
+GEMINI_MODEL=gemini-3.1-flash-lite
 ```
 
 `GEMINI_API_KEY`에는 `NEXT_PUBLIC_` 접두사를 붙이지 마세요. 사진과 키는 `/api/analyze-waste` 서버 경로에서만 처리됩니다. Vercel에서는 `Project → Settings → Environment Variables`에 같은 값을 등록한 뒤 다시 배포합니다.

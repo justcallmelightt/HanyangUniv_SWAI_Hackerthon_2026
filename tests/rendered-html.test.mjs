@@ -57,7 +57,7 @@ test("keeps AI safeguards and product metadata explicit", async () => {
   assert.match(app, /capture="environment"/);
   assert.match(app, /기기 카메라 열기/);
   assert.match(app, /fetch\("\/api\/analyze-waste"/);
-  assert.match(analysisApi, /gemini-2\.5-flash-lite/);
+  assert.match(analysisApi, /gemini-3\.1-flash-lite/);
   assert.match(analysisApi, /confidence >= 75/);
   assert.match(analysisApi, /"x-goog-api-key"/);
   assert.match(analysisApi, /"Cache-Control": "no-store"/);
