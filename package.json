@@ -15,6 +15,7 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.7",
     "drizzle-orm": "0.45.2",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.25.0",

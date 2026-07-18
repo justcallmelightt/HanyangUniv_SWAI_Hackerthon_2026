@@ -63,6 +63,10 @@ test("keeps AI safeguards and product metadata explicit", async () => {
   assert.match(api, /reverse_vending_machine/);
   assert.match(api, /OVERPASS_ENDPOINTS\.length/);
   assert.match(app, /OpenStreetMap 기반 주변 분리배출 장소 지도/);
+  assert.match(app, /로그인 없이 둘러보기/);
+  assert.match(app, /signInWithPassword/);
+  assert.match(app, /signUp/);
+  assert.match(app, /signInWithOAuth/);
   assert.match(layout, /applicationName:\s*"버림"/);
   assert.match(layout, /openGraph:/);
   assert.match(hosting, /"project_id"/);

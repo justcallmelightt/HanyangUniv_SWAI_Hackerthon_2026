@@ -19,12 +19,19 @@ import {
   Crosshair,
   Droplets,
   ExternalLink,
+  Eye,
+  EyeOff,
   GlassWater,
   History,
   Home,
   ImagePlus,
   Layers3,
+  LoaderCircle,
+  LockKeyhole,
   LocateFixed,
+  LogIn,
+  LogOut,
+  Mail,
   Map,
   MapPin,
   Navigation,
@@ -37,11 +44,13 @@ import {
   Sparkles,
   TriangleAlert,
   UserRound,
+  UserPlus,
   X,
   Zap,
 } from "lucide-react";
 import {
   ChangeEvent,
+  FormEvent,
   PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
@@ -49,6 +58,8 @@ import {
   useState,
 } from "react";
 import type { Circle, CircleMarker, LayerGroup, Map as LeafletMap } from "leaflet";
+import type { User } from "@supabase/supabase-js";
+import { getSupabaseBrowserClient, isSupabaseConfigured } from "./supabase-client";
 
 type Tab = "home" | "map" | "history" | "profile";
 type ScanState = "ready" | "analyzing" | "result" | "uncertain";
@@ -57,6 +68,7 @@ type LocationStatus = "idle" | "loading" | "granted" | "denied" | "unavailable";
 type CollectionStatus = "demo" | "loading" | "success" | "empty" | "error";
 type UserLocation = { lat: number; lng: number; accuracy: number };
 type CollectionMeta = { source: string; radiusKm: number; fetchedAt: string; fallbackServers: number };
+type AuthMode = "login" | "signup";
 
 type Place = {
   id: string;
@@ -764,7 +776,189 @@ function HistoryView({ onScan }: { onScan: () => void }) {
   );
 }
 
-function ProfileView() {
+function authDisplayName(user: User) {
+  const metadataName = user.user_metadata?.display_name;
+  if (typeof metadataName === "string" && metadataName.trim()) return metadataName.trim();
+  return user.email?.split("@")[0] || "버림 사용자";
+}
+
+function authErrorMessage(message: string) {
+  if (/invalid login credentials/i.test(message)) return "이메일 또는 비밀번호가 맞지 않아요.";
+  if (/email not confirmed/i.test(message)) return "이메일 인증을 먼저 완료해 주세요.";
+  if (/user already registered/i.test(message)) return "이미 가입된 이메일이에요. 로그인해 주세요.";
+  if (/password.*at least|weak password/i.test(message)) return "비밀번호는 8자 이상으로 입력해 주세요.";
+  if (/rate limit/i.test(message)) return "요청이 너무 많아요. 잠시 후 다시 시도해 주세요.";
+  return "인증 중 문제가 생겼어요. 입력 내용을 확인하고 다시 시도해 주세요.";
+}
+
+function AuthDialog({ onClose }: { onClose: () => void }) {
+  const reduceMotion = useReducedMotion();
+  const [mode, setMode] = useState<AuthMode>("login");
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  function changeMode(nextMode: AuthMode) {
+    setMode(nextMode);
+    setError("");
+    setMessage("");
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+
+    if (!isSupabaseConfigured) {
+      setError("로그인 연결을 위해 Supabase 환경 변수를 먼저 등록해 주세요.");
+      return;
+    }
+    if (mode === "signup" && !displayName.trim()) {
+      setError("화면에 표시할 이름을 입력해 주세요.");
+      return;
+    }
+    if (password.length < 8) {
+      setError("비밀번호는 8자 이상으로 입력해 주세요.");
+      return;
+    }
+
+    const client = getSupabaseBrowserClient();
+    if (!client) return;
+    setBusy(true);
+
+    try {
+      if (mode === "login") {
+        const { error: signInError } = await client.auth.signInWithPassword({ email, password });
+        if (signInError) throw signInError;
+        onClose();
+      } else {
+        const { data, error: signUpError } = await client.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { display_name: displayName.trim() },
+            emailRedirectTo: window.location.origin,
+          },
+        });
+        if (signUpError) throw signUpError;
+        if (data.session) onClose();
+        else setMessage("인증 메일을 보냈어요. 메일의 링크를 누르면 가입이 완료돼요.");
+      }
+    } catch (caught) {
+      setError(authErrorMessage(caught instanceof Error ? caught.message : ""));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function signInWithGoogle() {
+    setError("");
+    if (!isSupabaseConfigured) {
+      setError("로그인 연결을 위해 Supabase 환경 변수를 먼저 등록해 주세요.");
+      return;
+    }
+    const client = getSupabaseBrowserClient();
+    if (!client) return;
+    setBusy(true);
+    const { error: oauthError } = await client.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin },
+    });
+    if (oauthError) {
+      setError(authErrorMessage(oauthError.message));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <motion.button
+        className="auth-backdrop"
+        type="button"
+        aria-label="로그인 창 닫기"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: reduceMotion ? 0.15 : 0.2 }}
+        onClick={() => !busy && onClose()}
+      />
+      <motion.section
+        className="auth-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="auth-title"
+        initial={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.94, y: 22, backdropFilter: "blur(4px)" }}
+        animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0, backdropFilter: "blur(28px)" }}
+        exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: 14 }}
+        transition={reduceMotion ? { duration: 0.15 } : spring}
+      >
+        <div className="auth-dialog-head">
+          <div className="auth-mark"><Recycle size={21} /></div>
+          <button type="button" aria-label="로그인 창 닫기" onClick={onClose} disabled={busy}><X size={19} /></button>
+        </div>
+        <div className="auth-copy">
+          <span>BEORIM ACCOUNT</span>
+          <h2 id="auth-title">분리배출 기록을<br />어디서든 이어가세요.</h2>
+          <p>최소한의 정보만 사용하며, 사진은 계정에 저장하지 않아요.</p>
+        </div>
+
+        <div className="auth-tabs" role="tablist" aria-label="인증 방식">
+          <button type="button" role="tab" aria-selected={mode === "login"} className={mode === "login" ? "active" : ""} onClick={() => changeMode("login")}>로그인</button>
+          <button type="button" role="tab" aria-selected={mode === "signup"} className={mode === "signup" ? "active" : ""} onClick={() => changeMode("signup")}>회원가입</button>
+        </div>
+
+        <form className="auth-form" onSubmit={submit}>
+          <AnimatePresence initial={false}>
+            {mode === "signup" && (
+              <motion.label className="auth-field" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 58 }} exit={{ opacity: 0, height: 0 }} transition={reduceMotion ? { duration: 0.15 } : spring}>
+                <UserRound size={17} />
+                <span>이름</span>
+                <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} autoComplete="name" placeholder="표시할 이름" disabled={busy} />
+              </motion.label>
+            )}
+          </AnimatePresence>
+          <label className="auth-field">
+            <Mail size={17} />
+            <span>이메일</span>
+            <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" inputMode="email" placeholder="name@example.com" required disabled={busy} />
+          </label>
+          <label className="auth-field">
+            <LockKeyhole size={17} />
+            <span>비밀번호</span>
+            <input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="8자 이상" minLength={8} required disabled={busy} />
+            <button type="button" className="password-toggle" aria-label={showPassword ? "비밀번호 숨기기" : "비밀번호 보기"} onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button>
+          </label>
+
+          <div className={`auth-feedback ${error ? "error" : message ? "success" : ""}`} aria-live="polite">
+            {error || message || (mode === "signup" ? "가입 후 이메일 인증이 필요할 수 있어요." : "이메일과 비밀번호로 안전하게 로그인해요.")}
+          </div>
+
+          <motion.button className="auth-submit" type="submit" whileTap={{ scale: 0.975 }} transition={spring} disabled={busy}>
+            {busy ? <LoaderCircle className="spin" size={18} /> : mode === "login" ? <LogIn size={18} /> : <UserPlus size={18} />}
+            {busy ? "확인하고 있어요" : mode === "login" ? "로그인" : "계정 만들기"}
+          </motion.button>
+        </form>
+
+        <div className="auth-divider"><span>또는</span></div>
+        <motion.button className="google-auth" type="button" whileTap={{ scale: 0.975 }} transition={spring} onClick={() => void signInWithGoogle()} disabled={busy}>
+          <strong>G</strong> Google로 계속하기
+        </motion.button>
+        <button className="guest-auth" type="button" onClick={onClose} disabled={busy}>로그인 없이 둘러보기 <ArrowRight size={15} /></button>
+
+        {!isSupabaseConfigured && (
+          <p className="auth-setup-note"><TriangleAlert size={14} /> 현재는 게스트 모드예요. Supabase 환경 변수를 등록하면 로그인이 활성화됩니다.</p>
+        )}
+      </motion.section>
+    </>
+  );
+}
+
+function ProfileView({ user, loading, onLogin, onSignOut }: { user: User | null; loading: boolean; onLogin: () => void; onSignOut: () => void }) {
+  const displayName = user ? authDisplayName(user) : "";
   return (
     <motion.main
       className="view profile-view"
@@ -772,11 +966,28 @@ function ProfileView() {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
-      <div className="profile-card">
-        <div className="avatar">민</div>
-        <span>환경 새싹 · 레벨 3</span>
-        <h1>민준님</h1>
-        <p>이번 달 12번의 정확한 분리배출을 실천했어요.</p>
+      <div className={`profile-card ${user ? "signed-in" : "guest"}`}>
+        {loading ? (
+          <div className="profile-loading" role="status"><LoaderCircle className="spin" size={24} /> 계정을 확인하고 있어요</div>
+        ) : user ? (
+          <>
+            <div className="avatar">{displayName.slice(0, 1).toUpperCase()}</div>
+            <span>환경 새싹 · 레벨 3</span>
+            <h1>{displayName}님</h1>
+            <p>{user.email}</p>
+            <div className="account-status"><Check size={14} /> 로그인됨 · 기록 동기화 준비 완료</div>
+            <button className="profile-signout" type="button" onClick={onSignOut}><LogOut size={16} /> 로그아웃</button>
+          </>
+        ) : (
+          <>
+            <div className="avatar guest-avatar"><UserRound size={27} /></div>
+            <span>게스트 모드</span>
+            <h1>기록을 이어서 관리하세요</h1>
+            <p>로그인하면 기기를 바꿔도 활동 기록과 즐겨찾기를 이어갈 수 있어요.</p>
+            <motion.button className="profile-login" type="button" whileTap={{ scale: 0.975 }} transition={spring} onClick={onLogin}><LogIn size={17} /> 로그인 또는 회원가입</motion.button>
+            <small className="guest-note"><ShieldCheck size={13} /> 로그인하지 않아도 사진 분석과 지도는 모두 이용할 수 있어요.</small>
+          </>
+        )}
       </div>
       <section className="ai-principles">
         <div className="principle-head">
@@ -1216,7 +1427,7 @@ function Scanner({ onClose }: { onClose: () => void }) {
   );
 }
 
-function LandingPage({ onEnter }: { onEnter: () => void }) {
+function LandingPage({ onEnter, onLogin }: { onEnter: () => void; onLogin: () => void }) {
   return (
     <motion.main
       className="landing-page"
@@ -1228,7 +1439,10 @@ function LandingPage({ onEnter }: { onEnter: () => void }) {
     >
       <header className="landing-header">
         <Brand />
-        <span>AI 분리배출 가이드</span>
+        <div className="landing-header-actions">
+          <span>AI 분리배출 가이드</span>
+          <motion.button type="button" whileTap={{ scale: 0.96 }} transition={spring} onClick={onLogin}><UserRound size={16} /> 로그인</motion.button>
+        </div>
       </header>
 
       <section className="landing-hero">
@@ -1270,6 +1484,10 @@ function ProgramShell({
   collectionStatus,
   collectionMeta,
   onRefreshCollections,
+  authUser,
+  authLoading,
+  onLogin,
+  onSignOut,
 }: {
   tab: Tab;
   onTabChange: (tab: Tab) => void;
@@ -1284,6 +1502,10 @@ function ProgramShell({
   collectionStatus: CollectionStatus;
   collectionMeta: CollectionMeta | null;
   onRefreshCollections: () => void;
+  authUser: User | null;
+  authLoading: boolean;
+  onLogin: () => void;
+  onSignOut: () => void;
 }) {
   return (
     <motion.div
@@ -1300,7 +1522,7 @@ function ProgramShell({
           {tab === "home" && <HomeView key="home" onScan={onScan} onMap={() => onTabChange("map")} onPlace={onPlace} userLocation={userLocation} collectionPlaces={collectionPlaces} collectionStatus={collectionStatus} />}
           {tab === "map" && <MapView key="map" onPlace={onPlace} userLocation={userLocation} locationStatus={locationStatus} onLocationRequest={onLocationRequest} collectionPlaces={collectionPlaces} collectionStatus={collectionStatus} collectionMeta={collectionMeta} onRefreshCollections={onRefreshCollections} />}
           {tab === "history" && <HistoryView key="history" onScan={onScan} />}
-          {tab === "profile" && <ProfileView key="profile" />}
+          {tab === "profile" && <ProfileView key="profile" user={authUser} loading={authLoading} onLogin={onLogin} onSignOut={onSignOut} />}
         </AnimatePresence>
       </div>
     </motion.div>
@@ -1313,12 +1535,41 @@ export function WasteApp() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [notice, setNotice] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
   const [locationStatus, setLocationStatus] = useState<LocationStatus>("idle");
   const [collectionPlaces, setCollectionPlaces] = useState<Place[]>(demoPlaces);
   const [collectionStatus, setCollectionStatus] = useState<CollectionStatus>("demo");
   const [collectionMeta, setCollectionMeta] = useState<CollectionMeta | null>(null);
   const [collectionRefresh, setCollectionRefresh] = useState(0);
+
+  useEffect(() => {
+    const client = getSupabaseBrowserClient();
+    if (!client) return;
+
+    let active = true;
+    client.auth.getUser().then(({ data }) => {
+      if (active) {
+        setAuthUser(data.user ?? null);
+        setAuthLoading(false);
+      }
+    }).catch(() => {
+      if (active) setAuthLoading(false);
+    });
+
+    const { data: listener } = client.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
+      setAuthUser(session?.user ?? null);
+      setAuthLoading(false);
+    });
+
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     if (!userLocation) return;
@@ -1387,11 +1638,18 @@ export function WasteApp() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  async function signOut() {
+    const client = getSupabaseBrowserClient();
+    if (!client) return;
+    await client.auth.signOut();
+    setAuthUser(null);
+  }
+
   return (
     <>
       <AnimatePresence mode="wait" initial={false}>
         {!entered ? (
-          <LandingPage key="landing" onEnter={() => { setEntered(true); requestLocation(); }} />
+          <LandingPage key="landing" onEnter={() => { setEntered(true); requestLocation(); }} onLogin={() => setAuthOpen(true)} />
         ) : (
           <ProgramShell
             key="program"
@@ -1408,11 +1666,16 @@ export function WasteApp() {
             collectionStatus={collectionStatus}
             collectionMeta={collectionMeta}
             onRefreshCollections={refreshCollections}
+            authUser={authUser}
+            authLoading={authLoading}
+            onLogin={() => setAuthOpen(true)}
+            onSignOut={() => void signOut()}
           />
         )}
       </AnimatePresence>
 
       <AnimatePresence>
+        {authOpen && <AuthDialog key="auth-dialog" onClose={() => setAuthOpen(false)} />}
         {entered && scannerOpen && <Scanner onClose={() => setScannerOpen(false)} />}
         {entered && selectedPlace && <PlaceSheet place={selectedPlace} onClose={() => setSelectedPlace(null)} />}
         {entered && notice && (

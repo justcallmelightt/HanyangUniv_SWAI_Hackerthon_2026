@@ -19,6 +19,8 @@
 - 낮은 확신도에서는 추측하지 않고 판정을 보류하는 안전장치
 - 현재 MVP에서 사진을 서버로 전송하거나 저장하지 않는 개인정보 보호 구조
 - 최근 분석 기록과 분리배출 활동 확인
+- 이메일·비밀번호 및 Google 계정 로그인, 세션 유지, 로그아웃
+- 로그인 없이도 모든 핵심 기능을 확인할 수 있는 게스트 모드
 - 데스크톱과 모바일 화면 대응
 
 > 현재 사진 분석 결과는 샘플 시나리오이며, 수거 지점은 위치 권한 허용 후 OpenStreetMap Overpass API의 실제 등록 데이터를 조회합니다.
@@ -108,6 +110,24 @@ http://localhost:3000
 npm run build
 npm run start
 ```
+
+## 로그인 설정 (Supabase)
+
+로그인을 사용하지 않아도 사진 분석과 지도 등 모든 핵심 기능은 게스트 모드로 실행됩니다. 계정 로그인을 활성화하려면 다음 설정을 추가합니다.
+
+1. [Supabase](https://supabase.com)에서 프로젝트를 만듭니다.
+2. Supabase의 `Project Settings → API`에서 Project URL과 Publishable key를 확인합니다.
+3. 프로젝트 최상위에 `.env.local` 파일을 만들고 아래 값을 입력합니다.
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_ID.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_YOUR_KEY
+```
+
+4. Supabase의 `Authentication → URL Configuration`에서 로컬 주소와 배포 주소를 Redirect URLs에 등록합니다.
+5. Google 로그인을 사용할 경우 `Authentication → Providers → Google`도 활성화합니다.
+
+Vercel에서는 `Project → Settings → Environment Variables`에 같은 두 값을 등록한 뒤 다시 배포합니다. Publishable key만 사용하며 `service_role` 키는 브라우저나 GitHub에 절대 등록하지 않습니다.
 
 ## 검사 명령어
 
