@@ -10,6 +10,7 @@
 }
 
 :root {
+  --asset-revision: "safari-cache-v11";
   --ink: #151916;
   --muted: #6f766f;
   --soft: #eef1ed;
