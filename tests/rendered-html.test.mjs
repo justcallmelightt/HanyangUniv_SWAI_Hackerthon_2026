@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-async function render() {
+async function render(path = "/") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
-    new Request("http://localhost/", {
+    new Request(`http://localhost${path}`, {
       headers: { accept: "text/html" },
     }),
     {
@@ -37,8 +37,9 @@ test("server-renders the WasteSuperApp landing page", async () => {
 });
 
 test("keeps AI safeguards and product metadata explicit", async () => {
-  const [app, layout, hosting] = await Promise.all([
+  const [app, api, layout, hosting] = await Promise.all([
     readFile(new URL("../app/WasteApp.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/collection-points/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
   ]);
@@ -49,11 +50,21 @@ test("keeps AI safeguards and product metadata explicit", async () => {
   assert.match(app, /환경부 공식 기준으로 교차 검증/);
   assert.match(app, /navigator\.geolocation\.getCurrentPosition/);
   assert.match(app, /tile\.openstreetmap\.org/);
-  assert.match(app, /overpass\/api\/interpreter/);
+  assert.match(api, /overpass\/api\/interpreter/);
   assert.match(app, /fetchCollectionPlaces/);
   assert.match(app, /OpenStreetMap 실제 수거 지점/);
+  assert.match(api, /waste_basket/);
+  assert.match(api, /reverse_vending_machine/);
+  assert.match(api, /OVERPASS_ENDPOINTS\.length/);
   assert.match(app, /OpenStreetMap 기반 주변 분리배출 장소 지도/);
   assert.match(layout, /applicationName:\s*"버림"/);
   assert.match(layout, /openGraph:/);
   assert.match(hosting, /"project_id"/);
+});
+
+test("rejects invalid collection-point coordinates without calling upstream APIs", async () => {
+  const response = await render("/api/collection-points?lat=invalid&lng=126.9");
+  assert.equal(response.status, 400);
+  assert.match(response.headers.get("content-type") ?? "", /^application\/json\b/i);
+  assert.deepEqual(await response.json(), { error: "올바른 위치 좌표가 필요합니다." });
 });

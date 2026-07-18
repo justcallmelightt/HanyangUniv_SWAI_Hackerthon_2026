@@ -54,9 +54,10 @@ type ScanState = "ready" | "analyzing" | "result" | "uncertain";
 type LocationStatus = "idle" | "loading" | "granted" | "denied" | "unavailable";
 type CollectionStatus = "demo" | "loading" | "success" | "empty" | "error";
 type UserLocation = { lat: number; lng: number; accuracy: number };
+type CollectionMeta = { source: string; radiusKm: number; fetchedAt: string; fallbackServers: number };
 
 type Place = {
-  id: number;
+  id: string;
   name: string;
   type: string;
   distance: string;
@@ -72,7 +73,7 @@ type Place = {
 
 const demoPlaces: Place[] = [
   {
-    id: 1,
+    id: "demo-1",
     name: "관악구 스마트 분리수거함",
     type: "캔 · 페트 · 투명병",
     distance: "120m",
@@ -85,7 +86,7 @@ const demoPlaces: Place[] = [
     source: "demo",
   },
   {
-    id: 2,
+    id: "demo-2",
     name: "미림마이스터고 분리배출존",
     type: "종이 · 플라스틱 · 일반",
     distance: "350m",
@@ -98,7 +99,7 @@ const demoPlaces: Place[] = [
     source: "demo",
   },
   {
-    id: 3,
+    id: "demo-3",
     name: "신림동 주민센터 수거함",
     type: "폐건전지 · 형광등 · 소형가전",
     distance: "640m",
@@ -157,12 +158,16 @@ const materialTags: Array<[string, string]> = [
 function materialsFromTags(tags: Record<string, string>) {
   const materials = materialTags.filter(([key]) => tags[key] === "yes").map(([, label]) => label);
   if (tags.amenity === "waste_disposal" && materials.length === 0) materials.push("생활폐기물");
+  if (tags.amenity === "waste_basket" && materials.length === 0) materials.push("일반쓰레기");
+  if (tags.vending === "reverse_vending_machine" && materials.length === 0) materials.push("페트병", "캔");
   return materials;
 }
 
 function placeName(tags: Record<string, string>, materials: string[]) {
   if (tags["name:ko"] || tags.name) return tags["name:ko"] || tags.name;
   if (materials.includes("의류")) return "의류 수거함";
+  if (tags.vending === "reverse_vending_machine") return "재활용품 무인회수기";
+  if (tags.amenity === "waste_basket") return "공공 쓰레기통";
   if (tags.operator) return `${tags.operator} 분리수거함`;
   if (tags.amenity === "waste_disposal") return "생활폐기물 수거 지점";
   return "분리수거함";
@@ -176,12 +181,12 @@ function overpassToPlaces(elements: OverpassElement[], location: UserLocation) {
     const tags = element.tags ?? {};
     const materials = materialsFromTags(tags);
     const rawPlace: Place = {
-      id: element.id,
+      id: `${element.type}-${element.id}`,
       name: placeName(tags, materials),
       type: materials.length ? materials.join(" · ") : "수거 품목 정보 없음",
       distance: "",
       walk: "",
-      status: tags.opening_hours ? `운영 ${tags.opening_hours}` : "OpenStreetMap 등록 지점",
+      status: tags.opening_hours ? `운영 ${tags.opening_hours}` : tags.amenity === "waste_basket" ? "공공 쓰레기통" : "OpenStreetMap 등록 지점",
       tone: (["green", "black", "blue"] as const)[index % 3],
       lat,
       lng,
@@ -195,28 +200,14 @@ function overpassToPlaces(elements: OverpassElement[], location: UserLocation) {
 }
 
 async function fetchCollectionPlaces(location: UserLocation, signal: AbortSignal) {
-  const query = `[out:json][timeout:18];(nwr(around:8000,${location.lat},${location.lng})["amenity"="recycling"]["access"!="private"];nwr(around:5000,${location.lat},${location.lng})["amenity"="waste_disposal"]["access"!="private"];);out center 80;`;
-  const endpoints = [
-    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
-    "https://overpass-api.de/api/interpreter",
-  ];
-
-  for (const endpoint of endpoints) {
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-        body: new URLSearchParams({ data: query }),
-        signal,
-      });
-      if (!response.ok) continue;
-      const data = await response.json() as { elements?: OverpassElement[] };
-      if (Array.isArray(data.elements)) return overpassToPlaces(data.elements, location);
-    } catch (error) {
-      if (signal.aborted) throw error;
-    }
-  }
-  throw new Error("Overpass API request failed");
+  const response = await fetch(`/api/collection-points?lat=${encodeURIComponent(location.lat)}&lng=${encodeURIComponent(location.lng)}`, {
+    signal,
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) throw new Error(`Collection API returned ${response.status}`);
+  const data = await response.json() as { elements?: OverpassElement[]; meta?: CollectionMeta };
+  if (!Array.isArray(data.elements) || !data.meta) throw new Error("Invalid collection API response");
+  return { places: overpassToPlaces(data.elements, location).slice(0, 100), meta: data.meta };
 }
 
 const spring = {
@@ -429,7 +420,7 @@ function MiniMap({
         {collectionStatus === "demo" && "위치 권한 전 데모 데이터"}
         {collectionStatus === "loading" && <><span className="data-spinner" /> 실제 수거 지점 불러오는 중</>}
         {collectionStatus === "success" && <><i /> OpenStreetMap 실제 수거 지점</>}
-        {collectionStatus === "empty" && "반경 8km에 등록된 지점 없음"}
+        {collectionStatus === "empty" && "반경 15km에 등록된 지점 없음"}
         {collectionStatus === "error" && "수거 지점 연결 실패"}
       </span>
       {onExpand && (
@@ -585,6 +576,8 @@ function MapView({
   onLocationRequest,
   collectionPlaces,
   collectionStatus,
+  collectionMeta,
+  onRefreshCollections,
 }: {
   onPlace: (place: Place) => void;
   userLocation: UserLocation | null;
@@ -592,8 +585,11 @@ function MapView({
   onLocationRequest: () => void;
   collectionPlaces: Place[];
   collectionStatus: CollectionStatus;
+  collectionMeta: CollectionMeta | null;
+  onRefreshCollections: () => void;
 }) {
   const [filter, setFilter] = useState("전체");
+  const [search, setSearch] = useState("");
   const nearbyPlaces = userLocation
     ? [...collectionPlaces].sort((a, b) => distanceInMeters(userLocation, a) - distanceInMeters(userLocation, b))
     : collectionPlaces;
@@ -602,10 +598,16 @@ function MapView({
     페트병: ["페트병", "플라스틱"],
     폐건전지: ["폐건전지"],
     소형가전: ["소형가전", "전자제품"],
+    의류: ["의류", "신발"],
+    일반: ["일반쓰레기", "생활폐기물"],
   };
-  const filteredPlaces = filter === "전체"
+  const materialFilteredPlaces = filter === "전체"
     ? nearbyPlaces
     : nearbyPlaces.filter((place) => filterTerms[filter].some((term) => place.materials.includes(term)));
+  const normalizedSearch = search.trim().toLocaleLowerCase("ko-KR");
+  const filteredPlaces = normalizedSearch
+    ? materialFilteredPlaces.filter((place) => `${place.name} ${place.type}`.toLocaleLowerCase("ko-KR").includes(normalizedSearch))
+    : materialFilteredPlaces;
   const locationNotice = {
     idle: "",
     loading: "현재 위치를 확인하고 있어요",
@@ -627,10 +629,10 @@ function MapView({
         <h1>버릴 곳을 찾아드릴게요</h1>
         <label className="search-bar">
           <Search size={19} />
-          <input aria-label="장소 검색" placeholder="주소나 수거 품목으로 검색" />
+          <input aria-label="장소 검색" placeholder="장소명이나 수거 품목으로 검색" value={search} onChange={(event) => setSearch(event.target.value)} />
         </label>
         <div className="filter-row" role="group" aria-label="수거 품목 필터">
-          {["전체", "페트병", "폐건전지", "소형가전"].map((item) => (
+          {["전체", "페트병", "폐건전지", "소형가전", "의류", "일반"].map((item) => (
             <button
               className={filter === item ? "active" : ""}
               type="button"
@@ -640,6 +642,14 @@ function MapView({
               {item}
             </button>
           ))}
+        </div>
+        <div className={`data-health ${collectionStatus}`}>
+          <span>{collectionStatus === "loading" ? <span className="data-spinner" /> : <i />}</span>
+          <div>
+            <strong>{collectionStatus === "success" ? `실제 수거 지점 ${collectionPlaces.length}곳 연결` : collectionStatus === "loading" ? "공개 데이터를 확인하고 있어요" : collectionStatus === "error" ? "데이터 연결이 지연되고 있어요" : collectionStatus === "empty" ? "등록된 지점을 찾지 못했어요" : "위치 권한을 허용해 주세요"}</strong>
+            <small>{collectionMeta ? `반경 ${collectionMeta.radiusKm}km · 서버 ${collectionMeta.fallbackServers}곳 자동 재시도 · ${new Date(collectionMeta.fetchedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} 갱신` : "분리수거함·쓰레기통·무인회수기를 함께 조회합니다."}</small>
+          </div>
+          <motion.button type="button" whileTap={{ scale: 0.92 }} transition={spring} onClick={onRefreshCollections}>새로고침</motion.button>
         </div>
       </div>
       <div className="full-map-wrap">
@@ -682,7 +692,7 @@ function MapView({
             onClick={() => onPlace(place)}
           >
             <div className={`place-icon ${place.tone}`}>
-              {place.id === 3 ? <Zap size={20} /> : <Recycle size={20} />}
+              {place.materials.includes("소형가전") || place.materials.includes("전자제품") ? <Zap size={20} /> : <Recycle size={20} />}
             </div>
             <div className="place-copy">
               <strong>{place.name}</strong>
@@ -698,8 +708,9 @@ function MapView({
         {filteredPlaces.length === 0 && (
           <div className="map-empty-state">
             {collectionStatus === "loading" ? <span className="empty-spinner" /> : <MapPin size={22} />}
-            <strong>{collectionStatus === "loading" ? "실제 수거 지점을 불러오는 중이에요" : filter === "전체" ? "주변에 등록된 수거 지점이 없어요" : `${filter} 수거 지점이 없어요`}</strong>
+            <strong>{collectionStatus === "loading" ? "실제 수거 지점을 불러오는 중이에요" : search ? "검색 결과가 없어요" : filter === "전체" ? "주변에 등록된 수거 지점이 없어요" : `${filter} 수거 지점이 없어요`}</strong>
             <p>{collectionStatus === "error" ? "외부 지도 데이터 연결이 지연되고 있어요. 위치 버튼을 눌러 다시 시도해 주세요." : "OpenStreetMap에 등록된 공개 지점을 기준으로 보여드려요."}</p>
+            {(collectionStatus === "error" || collectionStatus === "empty") && <button type="button" onClick={onRefreshCollections}>다시 불러오기</button>}
           </div>
         )}
       </div>
@@ -1134,6 +1145,8 @@ function ProgramShell({
   onLocationRequest,
   collectionPlaces,
   collectionStatus,
+  collectionMeta,
+  onRefreshCollections,
 }: {
   tab: Tab;
   onTabChange: (tab: Tab) => void;
@@ -1146,6 +1159,8 @@ function ProgramShell({
   onLocationRequest: () => void;
   collectionPlaces: Place[];
   collectionStatus: CollectionStatus;
+  collectionMeta: CollectionMeta | null;
+  onRefreshCollections: () => void;
 }) {
   return (
     <motion.div
@@ -1160,7 +1175,7 @@ function ProgramShell({
         <BottomNav tab={tab} onChange={onTabChange} onScan={onScan} />
         <AnimatePresence mode="wait">
           {tab === "home" && <HomeView key="home" onScan={onScan} onMap={() => onTabChange("map")} onPlace={onPlace} userLocation={userLocation} collectionPlaces={collectionPlaces} collectionStatus={collectionStatus} />}
-          {tab === "map" && <MapView key="map" onPlace={onPlace} userLocation={userLocation} locationStatus={locationStatus} onLocationRequest={onLocationRequest} collectionPlaces={collectionPlaces} collectionStatus={collectionStatus} />}
+          {tab === "map" && <MapView key="map" onPlace={onPlace} userLocation={userLocation} locationStatus={locationStatus} onLocationRequest={onLocationRequest} collectionPlaces={collectionPlaces} collectionStatus={collectionStatus} collectionMeta={collectionMeta} onRefreshCollections={onRefreshCollections} />}
           {tab === "history" && <HistoryView key="history" onScan={onScan} />}
           {tab === "profile" && <ProfileView key="profile" />}
         </AnimatePresence>
@@ -1179,25 +1194,40 @@ export function WasteApp() {
   const [locationStatus, setLocationStatus] = useState<LocationStatus>("idle");
   const [collectionPlaces, setCollectionPlaces] = useState<Place[]>(demoPlaces);
   const [collectionStatus, setCollectionStatus] = useState<CollectionStatus>("demo");
+  const [collectionMeta, setCollectionMeta] = useState<CollectionMeta | null>(null);
+  const [collectionRefresh, setCollectionRefresh] = useState(0);
 
   useEffect(() => {
     if (!userLocation) return;
     const controller = new AbortController();
 
     fetchCollectionPlaces(userLocation, controller.signal)
-      .then((nextPlaces) => {
+      .then(({ places: nextPlaces, meta }) => {
         setCollectionPlaces(nextPlaces);
+        setCollectionMeta(meta);
         setCollectionStatus(nextPlaces.length ? "success" : "empty");
       })
       .catch(() => {
         if (!controller.signal.aborted) {
           setCollectionPlaces([]);
+          setCollectionMeta(null);
           setCollectionStatus("error");
         }
       });
 
     return () => controller.abort();
-  }, [userLocation]);
+  }, [collectionRefresh, userLocation]);
+
+  function refreshCollections() {
+    if (!userLocation) {
+      requestLocation();
+      return;
+    }
+    setCollectionStatus("loading");
+    setCollectionPlaces([]);
+    setCollectionMeta(null);
+    setCollectionRefresh((value) => value + 1);
+  }
 
   function requestLocation() {
     if (!("geolocation" in navigator)) {
@@ -1210,6 +1240,7 @@ export function WasteApp() {
       ({ coords }) => {
         setCollectionStatus("loading");
         setCollectionPlaces([]);
+        setCollectionMeta(null);
         setUserLocation({ lat: coords.latitude, lng: coords.longitude, accuracy: coords.accuracy });
         setLocationStatus("granted");
       },
@@ -1252,6 +1283,8 @@ export function WasteApp() {
             onLocationRequest={requestLocation}
             collectionPlaces={collectionPlaces}
             collectionStatus={collectionStatus}
+            collectionMeta={collectionMeta}
+            onRefreshCollections={refreshCollections}
           />
         )}
       </AnimatePresence>
