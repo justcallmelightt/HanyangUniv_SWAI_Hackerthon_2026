@@ -60,6 +60,9 @@ test("keeps AI safeguards and product metadata explicit", async () => {
   assert.match(app, /fetch\("\/api\/analyze-waste"/);
   assert.match(app, /fetch\("\/api\/waste-chat"/);
   assert.match(app, /AI에게 더 물어보기/);
+  assert.match(app, /버리는 과정 전체를/);
+  assert.match(app, /mode: "integrated"/);
+  assert.match(app, /사진 판정과 행동 요령, 현재 위치, 주변 수거함/);
   assert.match(analysisApi, /gemini-3\.1-flash-lite/);
   assert.match(analysisApi, /confidence >= 75/);
   assert.match(analysisApi, /"x-goog-api-key"/);
@@ -67,6 +70,8 @@ test("keeps AI safeguards and product metadata explicit", async () => {
   assert.match(chatApi, /gemini-3\.1-flash-lite/);
   assert.match(chatApi, /분석 상태가 uncertain이거나 근거가 부족하면/);
   assert.match(chatApi, /summary와 steps를 우선 사실로 사용/);
+  assert.match(chatApi, /주변 수거 지점을 연결하는/);
+  assert.match(chatApi, /목록에 없는 장소를 만들지 마라/);
   assert.match(chatApi, /slice\(-6\)/);
   assert.match(chatApi, /"Cache-Control": "no-store"/);
   assert.match(envExample, /^GEMINI_API_KEY=/m);
@@ -81,6 +86,9 @@ test("keeps AI safeguards and product metadata explicit", async () => {
   assert.match(api, /OVERPASS_ENDPOINTS\.length/);
   assert.match(app, /OpenStreetMap 기반 주변 분리배출 장소 지도/);
   assert.match(app, /로그인 없이 둘러보기/);
+  assert.match(app, /비밀번호는 버림 서버에 저장하지 않아요/);
+  assert.match(app, /브라우저에는 공개용 키만 사용해요/);
+  assert.match(app, /로그인 없이도 핵심 기능을 쓸 수 있어요/);
   assert.match(app, /signInWithPassword/);
   assert.match(app, /signUp/);
   assert.match(app, /signInWithOAuth/);

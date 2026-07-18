@@ -63,7 +63,7 @@ import type { Circle, CircleMarker, LayerGroup, Map as LeafletMap } from "leafle
 import type { User } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "./supabase-client";
 
-type Tab = "home" | "map" | "history" | "profile";
+type Tab = "home" | "map" | "ai" | "history" | "profile";
 type ScanState = "ready" | "analyzing" | "result" | "uncertain";
 type CameraStatus = "requesting" | "live" | "denied" | "unsupported" | "error";
 type LocationStatus = "idle" | "loading" | "granted" | "denied" | "unavailable";
@@ -986,6 +986,27 @@ function AuthDialog({ onClose }: { onClose: () => void }) {
         </motion.button>
         <button className="guest-auth" type="button" onClick={onClose} disabled={busy}>로그인 없이 둘러보기 <ArrowRight size={15} /></button>
 
+        <aside className="auth-trust" aria-label="로그인 안심 안내">
+          <div className="auth-trust-head">
+            <span><ShieldCheck size={16} /></span>
+            <div><strong>안심하고 로그인하세요</strong><small>필요한 정보만 안전하게 처리해요</small></div>
+          </div>
+          <ul>
+            <li>
+              <LockKeyhole size={14} />
+              <p><strong>비밀번호는 버림 서버에 저장하지 않아요</strong><small>검증된 Supabase 인증 시스템이 직접 처리합니다.</small></p>
+            </li>
+            <li>
+              <ShieldCheck size={14} />
+              <p><strong>브라우저에는 공개용 키만 사용해요</strong><small>관리자 권한 키와 Gemini API 키는 화면에 노출하지 않습니다.</small></p>
+            </li>
+            <li>
+              <EyeOff size={14} />
+              <p><strong>로그인 없이도 핵심 기능을 쓸 수 있어요</strong><small>계정 없이 사진 분석과 주변 수거함 찾기를 이용할 수 있습니다.</small></p>
+            </li>
+          </ul>
+        </aside>
+
         {!isSupabaseConfigured && (
           <p className="auth-setup-note"><TriangleAlert size={14} /> 현재는 게스트 모드예요. Supabase 환경 변수를 등록하면 로그인이 활성화됩니다.</p>
         )}
@@ -1054,6 +1075,7 @@ function BottomNav({ tab, onChange, onScan }: { tab: Tab; onChange: (tab: Tab) =
   const items = [
     { id: "home" as Tab, label: "홈", icon: Home },
     { id: "map" as Tab, label: "지도", icon: Map },
+    { id: "ai" as Tab, label: "버림 AI", icon: Sparkles },
     { id: "history" as Tab, label: "기록", icon: History },
     { id: "profile" as Tab, label: "내 정보", icon: UserRound },
   ];
@@ -1081,6 +1103,109 @@ function BottomNav({ tab, onChange, onScan }: { tab: Tab; onChange: (tab: Tab) =
         </button>
       ))}
     </nav>
+  );
+}
+
+function UnifiedAiView({
+  analysis,
+  userLocation,
+  places,
+  onScan,
+  onMap,
+}: {
+  analysis: WasteAnalysis | null;
+  userLocation: UserLocation | null;
+  places: Place[];
+  onScan: () => void;
+  onMap: () => void;
+}) {
+  const [question, setQuestion] = useState("");
+  const [messages, setMessages] = useState<WasteChatMessage[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [chatError, setChatError] = useState("");
+  const chatEnd = useRef<HTMLDivElement>(null);
+  const nearestPlaces = userLocation
+    ? [...places].sort((a, b) => distanceInMeters(userLocation, a) - distanceInMeters(userLocation, b)).slice(0, 3)
+    : places.slice(0, 3);
+  const suggestions = analysis
+    ? ["지금부터 무엇을 하면 돼?", "어디에 버리는 게 가장 가까워?", "판정이 확실한지 다시 설명해줘"]
+    : ["이 물건은 어떻게 확인하면 돼?", "내 주변 수거함을 찾아줘", "분리배출이 헷갈릴 때 원칙을 알려줘"];
+
+  useEffect(() => {
+    chatEnd.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [messages, loading]);
+
+  async function ask(event?: FormEvent, suggestion?: string) {
+    event?.preventDefault();
+    const nextQuestion = (suggestion ?? question).trim();
+    if (!nextQuestion || loading) return;
+    const history = messages.slice(-6);
+    setMessages((current) => [...current, { role: "user", content: nextQuestion }]);
+    setQuestion("");
+    setChatError("");
+    setLoading(true);
+    try {
+      const response = await fetch("/api/waste-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "integrated",
+          analysis,
+          location: userLocation,
+          places: nearestPlaces,
+          messages: history,
+          question: nextQuestion,
+        }),
+      });
+      const data = await response.json() as { answer?: string; error?: string };
+      if (!response.ok || !data.answer) throw new Error(data.error || "답변을 만들지 못했습니다.");
+      setMessages((current) => [...current, { role: "assistant", content: data.answer! }]);
+    } catch (caught) {
+      setChatError(caught instanceof Error ? caught.message : "통합 안내를 불러오지 못했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <motion.main className="view unified-ai-view" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={spring}>
+      <section className="unified-ai-hero">
+        <div className="unified-ai-orb"><Sparkles size={25} /></div>
+        <div><span>BEORIM INTELLIGENCE</span><h1>버리는 과정 전체를<br />한 번에 물어보세요.</h1><p>사진 판정과 행동 요령, 현재 위치, 주변 수거함을 연결해 지금 해야 할 다음 행동을 알려드려요.</p></div>
+      </section>
+
+      <div className="ai-context-grid" aria-label="버림 AI가 연결한 정보">
+        <button type="button" onClick={onScan}>
+          <span className={analysis ? "ready" : "waiting"}>{analysis ? <Check size={16} /> : <Camera size={16} />}</span>
+          <div><small>사진 인식</small><strong>{analysis ? analysis.itemName : "아직 확인한 물건이 없어요"}</strong><em>{analysis ? `확신도 ${analysis.confidence}% · ${analysis.category}` : "사진을 찍으면 대화에 자동으로 연결돼요"}</em></div>
+          <ChevronRight size={17} />
+        </button>
+        <button type="button" onClick={onMap}>
+          <span className={userLocation ? "ready" : "waiting"}>{userLocation ? <LocateFixed size={16} /> : <MapPin size={16} />}</span>
+          <div><small>위치와 수거함</small><strong>{userLocation ? `${places.length}곳의 수거 지점 연결` : "현재 위치 확인이 필요해요"}</strong><em>{nearestPlaces[0] ? `가장 가까운 곳 · ${nearestPlaces[0].name}` : "지도를 열어 주변 장소를 찾아보세요"}</em></div>
+          <ChevronRight size={17} />
+        </button>
+      </div>
+
+      <section className="unified-chat">
+        <header><span><MessageCircle size={17} /></span><div><strong>버림 AI</strong><small>상황을 연결해 다음 행동을 안내해요</small></div><i>GEMINI</i></header>
+        <div className="unified-thread" role="log" aria-live="polite">
+          {messages.length === 0 && (
+            <div className="ai-welcome"><Sparkles size={18} /><p><strong>{analysis ? `${analysis.itemName} 결과를 기억하고 있어요.` : "무엇을 버리려는지 알려주세요."}</strong><span>{analysis ? "가까운 배출 장소까지 이어서 물어볼 수 있어요." : "사진을 먼저 찍어도 되고, 궁금한 점부터 물어봐도 돼요."}</span></p></div>
+          )}
+          {messages.map((message, index) => <div className={`unified-bubble ${message.role}`} key={`${message.role}-${index}`}><span>{message.role === "assistant" ? "버림 AI" : "나"}</span><p>{message.content}</p></div>)}
+          {loading && <div className="unified-bubble assistant loading"><span>버림 AI</span><p><i /><i /><i /></p></div>}
+          <div ref={chatEnd} />
+        </div>
+        {messages.length === 0 && <div className="unified-suggestions">{suggestions.map((item) => <motion.button type="button" key={item} whileTap={{ scale: .97 }} transition={spring} onClick={() => void ask(undefined, item)}>{item}</motion.button>)}</div>}
+        {chatError && <div className="chat-error" role="alert"><TriangleAlert size={14} />{chatError}</div>}
+        <form className="unified-composer" onSubmit={(event) => void ask(event)}>
+          <label><span className="visually-hidden">버림 AI에게 질문</span><input value={question} maxLength={400} placeholder="예: 이 페트병을 지금 어디에 버리면 돼?" onChange={(event) => setQuestion(event.target.value)} /></label>
+          <motion.button type="submit" aria-label="질문 보내기" disabled={!question.trim() || loading} whileTap={{ scale: .9 }} transition={spring}>{loading ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />}</motion.button>
+        </form>
+        <p className="unified-ai-safety"><ShieldCheck size={13} /> 모르면 추측하지 않고 추가 확인을 요청하며, 대화는 서버에 저장하지 않아요.</p>
+      </section>
+    </motion.main>
   );
 }
 
@@ -1345,7 +1470,7 @@ function prepareImage(file: File) {
   });
 }
 
-function Scanner({ onClose }: { onClose: () => void }) {
+function Scanner({ onClose, onAnalysis }: { onClose: () => void; onAnalysis: (analysis: WasteAnalysis) => void }) {
   const [state, setState] = useState<ScanState>("ready");
   const [preview, setPreview] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<WasteAnalysis | null>(null);
@@ -1434,6 +1559,7 @@ function Scanner({ onClose }: { onClose: () => void }) {
     if (!imageDataUrl) {
       analysisTimerRef.current = window.setTimeout(() => {
         setAnalysis(sampleAnalysis);
+        onAnalysis(sampleAnalysis);
         setState("result");
       }, 900);
       return;
@@ -1448,6 +1574,7 @@ function Scanner({ onClose }: { onClose: () => void }) {
       const data = await response.json() as { analysis?: WasteAnalysis; error?: string };
       if (!response.ok || !data.analysis) throw new Error(data.error || "사진을 분석하지 못했습니다.");
       setAnalysis(data.analysis);
+      onAnalysis(data.analysis);
       setState(data.analysis.status === "confident" ? "result" : "uncertain");
     } catch (error) {
       setAnalysisError(error instanceof Error ? error.message : "사진 분석 중 오류가 발생했습니다.");
@@ -1657,6 +1784,7 @@ function ProgramShell({
   authLoading,
   onLogin,
   onSignOut,
+  latestAnalysis,
 }: {
   tab: Tab;
   onTabChange: (tab: Tab) => void;
@@ -1675,6 +1803,7 @@ function ProgramShell({
   authLoading: boolean;
   onLogin: () => void;
   onSignOut: () => void;
+  latestAnalysis: WasteAnalysis | null;
 }) {
   return (
     <motion.div
@@ -1690,6 +1819,7 @@ function ProgramShell({
         <AnimatePresence mode="wait">
           {tab === "home" && <HomeView key="home" onScan={onScan} onMap={() => onTabChange("map")} onPlace={onPlace} userLocation={userLocation} collectionPlaces={collectionPlaces} collectionStatus={collectionStatus} />}
           {tab === "map" && <MapView key="map" onPlace={onPlace} userLocation={userLocation} locationStatus={locationStatus} onLocationRequest={onLocationRequest} collectionPlaces={collectionPlaces} collectionStatus={collectionStatus} collectionMeta={collectionMeta} onRefreshCollections={onRefreshCollections} />}
+          {tab === "ai" && <UnifiedAiView key="ai" analysis={latestAnalysis} userLocation={userLocation} places={collectionPlaces} onScan={onScan} onMap={() => onTabChange("map")} />}
           {tab === "history" && <HistoryView key="history" onScan={onScan} />}
           {tab === "profile" && <ProfileView key="profile" user={authUser} loading={authLoading} onLogin={onLogin} onSignOut={onSignOut} />}
         </AnimatePresence>
@@ -1713,6 +1843,7 @@ export function WasteApp() {
   const [collectionStatus, setCollectionStatus] = useState<CollectionStatus>("demo");
   const [collectionMeta, setCollectionMeta] = useState<CollectionMeta | null>(null);
   const [collectionRefresh, setCollectionRefresh] = useState(0);
+  const [latestAnalysis, setLatestAnalysis] = useState<WasteAnalysis | null>(null);
 
   useEffect(() => {
     const client = getSupabaseBrowserClient();
@@ -1839,13 +1970,14 @@ export function WasteApp() {
             authLoading={authLoading}
             onLogin={() => setAuthOpen(true)}
             onSignOut={() => void signOut()}
+            latestAnalysis={latestAnalysis}
           />
         )}
       </AnimatePresence>
 
       <AnimatePresence>
         {authOpen && <AuthDialog key="auth-dialog" onClose={() => setAuthOpen(false)} />}
-        {entered && scannerOpen && <Scanner onClose={() => setScannerOpen(false)} />}
+        {entered && scannerOpen && <Scanner onClose={() => setScannerOpen(false)} onAnalysis={setLatestAnalysis} />}
         {entered && selectedPlace && <PlaceSheet place={selectedPlace} onClose={() => setSelectedPlace(null)} />}
         {entered && notice && (
           <motion.div className="notice-toast" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={spring}>
