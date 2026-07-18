@@ -34,12 +34,14 @@ import {
   Mail,
   Map,
   MapPin,
+  MessageCircle,
   Navigation,
   PackageOpen,
   Recycle,
   RotateCcw,
   ScanLine,
   Search,
+  Send,
   ShieldCheck,
   Sparkles,
   TriangleAlert,
@@ -83,6 +85,8 @@ type WasteAnalysis = {
   caution: string;
   model: string;
 };
+
+type WasteChatMessage = { role: "user" | "assistant"; content: string };
 
 const sampleAnalysis: WasteAnalysis = {
   status: "confident",
@@ -1145,6 +1149,84 @@ function PlaceSheet({ place, onClose }: { place: Place; onClose: () => void }) {
   );
 }
 
+function WasteChat({ analysis }: { analysis: WasteAnalysis }) {
+  const [open, setOpen] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [messages, setMessages] = useState<WasteChatMessage[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [chatError, setChatError] = useState("");
+  const chatEnd = useRef<HTMLDivElement>(null);
+  const suggestions = analysis.status === "confident"
+    ? ["뚜껑은 따로 버려요?", "얼마나 씻어야 해요?", "라벨이 안 떼져요"]
+    : ["어떤 부분을 찍을까요?", "재질 표시는 어디에 있나요?", "지금 버리면 안 되나요?"];
+
+  useEffect(() => {
+    if (open) chatEnd.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [messages, loading, open]);
+
+  async function ask(event?: FormEvent, suggestedQuestion?: string) {
+    event?.preventDefault();
+    const nextQuestion = (suggestedQuestion ?? question).trim();
+    if (!nextQuestion || loading) return;
+
+    const history = messages.slice(-6);
+    setMessages((current) => [...current, { role: "user", content: nextQuestion }]);
+    setQuestion("");
+    setChatError("");
+    setLoading(true);
+
+    try {
+      const response = await fetch("/api/waste-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ analysis, messages: history, question: nextQuestion }),
+      });
+      const data = await response.json() as { answer?: string; error?: string };
+      if (!response.ok || !data.answer) throw new Error(data.error || "답변을 만들지 못했습니다.");
+      setMessages((current) => [...current, { role: "assistant", content: data.answer! }]);
+    } catch (caught) {
+      setChatError(caught instanceof Error ? caught.message : "추가 질문을 처리하지 못했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section className={`waste-chat ${open ? "open" : ""}`} aria-label="인식 결과 추가 질문">
+      <motion.button className="waste-chat-toggle" type="button" aria-expanded={open} whileTap={{ scale: 0.985 }} transition={spring} onClick={() => setOpen((value) => !value)}>
+        <span><MessageCircle size={17} /><strong>AI에게 더 물어보기</strong></span>
+        <em>{messages.length ? `대화 ${messages.length}개` : "사진 결과에 이어서 질문"}</em>
+        <ChevronDown size={17} />
+      </motion.button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div className="waste-chat-body" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={spring}>
+            <div className="chat-context"><Sparkles size={14} /><span><strong>{analysis.itemName}</strong> 인식 결과와 근거를 기억하고 답해요.</span></div>
+            {messages.length === 0 && (
+              <div className="chat-suggestions">
+                {suggestions.map((suggestion) => <motion.button type="button" key={suggestion} whileTap={{ scale: 0.96 }} transition={spring} onClick={() => void ask(undefined, suggestion)}>{suggestion}</motion.button>)}
+              </div>
+            )}
+            {messages.length > 0 && (
+              <div className="chat-thread" role="log" aria-live="polite">
+                {messages.map((message, index) => <div className={`chat-bubble ${message.role}`} key={`${message.role}-${index}`}><span>{message.role === "assistant" ? "버림 AI" : "나"}</span><p>{message.content}</p></div>)}
+                {loading && <div className="chat-bubble assistant loading"><span>버림 AI</span><p><i /><i /><i /></p></div>}
+                <div ref={chatEnd} />
+              </div>
+            )}
+            {chatError && <div className="chat-error" role="alert"><TriangleAlert size={14} />{chatError}</div>}
+            <form className="chat-composer" onSubmit={(event) => void ask(event)}>
+              <label><span className="visually-hidden">추가 질문</span><input value={question} maxLength={400} placeholder="예: 뚜껑은 어떻게 버려요?" onChange={(event) => setQuestion(event.target.value)} /></label>
+              <motion.button type="submit" aria-label="질문 보내기" disabled={!question.trim() || loading} whileTap={{ scale: 0.9 }} transition={spring}>{loading ? <LoaderCircle className="spin" size={17} /> : <Send size={17} />}</motion.button>
+            </form>
+            <p className="chat-privacy"><ShieldCheck size={12} /> 대화는 답변 생성 중에만 전송되며 저장하지 않아요.</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </section>
+  );
+}
+
 function ConfidentResult({ analysis, onDone, onRetry }: { analysis: WasteAnalysis; onDone: () => void; onRetry: () => void }) {
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const stepIcons = [Droplets, RotateCcw, Layers3, Recycle, Bottle];
@@ -1191,6 +1273,7 @@ function ConfidentResult({ analysis, onDone, onRetry }: { analysis: WasteAnalysi
           );
         })}
       </div>
+      <WasteChat analysis={analysis} />
       <div className="result-actions">
         <motion.button className="primary-button" type="button" whileTap={{ scale: 0.98 }} transition={spring} onClick={onDone}>
           <Check size={19} /> 확인했어요
@@ -1224,6 +1307,7 @@ function UncertainResult({ analysis, onRetry }: { analysis: WasteAnalysis; onRet
         ))}
       </div>
       <div className="safety-note"><TriangleAlert size={17} /><p><strong>확실해질 때까지 버리지 마세요.</strong>{analysis.caution}</p></div>
+      <WasteChat analysis={analysis} />
       <div className="result-actions">
         <motion.button className="primary-button" type="button" whileTap={{ scale: 0.98 }} transition={spring} onClick={onRetry}>
           <Camera size={19} /> 안내대로 다시 찍기

@@ -37,10 +37,11 @@ test("server-renders the WasteSuperApp landing page", async () => {
 });
 
 test("keeps AI safeguards and product metadata explicit", async () => {
-  const [app, api, analysisApi, layout, hosting, envExample] = await Promise.all([
+  const [app, api, analysisApi, chatApi, layout, hosting, envExample] = await Promise.all([
     readFile(new URL("../app/WasteApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/collection-points/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/analyze-waste/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/waste-chat/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
     readFile(new URL("../.env.example", import.meta.url), "utf8"),
@@ -57,10 +58,16 @@ test("keeps AI safeguards and product metadata explicit", async () => {
   assert.match(app, /capture="environment"/);
   assert.match(app, /기기 카메라 열기/);
   assert.match(app, /fetch\("\/api\/analyze-waste"/);
+  assert.match(app, /fetch\("\/api\/waste-chat"/);
+  assert.match(app, /AI에게 더 물어보기/);
   assert.match(analysisApi, /gemini-3\.1-flash-lite/);
   assert.match(analysisApi, /confidence >= 75/);
   assert.match(analysisApi, /"x-goog-api-key"/);
   assert.match(analysisApi, /"Cache-Control": "no-store"/);
+  assert.match(chatApi, /gemini-3\.1-flash-lite/);
+  assert.match(chatApi, /분석 상태가 uncertain이거나 근거가 부족하면/);
+  assert.match(chatApi, /slice\(-6\)/);
+  assert.match(chatApi, /"Cache-Control": "no-store"/);
   assert.match(envExample, /^GEMINI_API_KEY=/m);
   assert.doesNotMatch(envExample, /NEXT_PUBLIC_GEMINI/);
   assert.doesNotMatch(app, /disabled=\{cameraStatus === "requesting"\}/);

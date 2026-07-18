@@ -6,7 +6,7 @@
 
 ## 배포 주소
 
-[WasteSuperApp 실행하기](https://hanyang-univ-swai-hackathon-2026.vercel.app)
+[WasteSuperApp 실행하기](https://wastesuper.vercel.app)
 
 ## 주요 기능
 
@@ -14,6 +14,7 @@
 - 브라우저 위치 권한을 통한 현재 위치 표시와 거리순 정렬
 - 실시간 후면 카메라 촬영 또는 이미지 업로드를 통한 Gemini 품목 분석
 - 품목별 단계형 분리배출 행동 요령 제공
+- 인식한 품목과 근거를 기억하는 Gemini 후속 질문 대화
 - 분석이 불확실할 때 뒷면 촬영, 흔들림 개선 등 추가 촬영 안내
 - AI가 확인한 시각 단서, 확신도의 한계, 공식 검증 출처 공개
 - 낮은 확신도에서는 추측하지 않고 판정을 보류하는 안전장치
@@ -23,7 +24,7 @@
 - 로그인 없이도 모든 핵심 기능을 확인할 수 있는 게스트 모드
 - 데스크톱과 모바일 화면 대응
 
-> 실제 사진은 Gemini 2.5 Flash-Lite로 분석합니다. `샘플 체험` 버튼은 API 장애 상황에서도 시연할 수 있는 고정 데모이며, 수거 지점은 위치 권한 허용 후 OpenStreetMap Overpass API의 실제 등록 데이터를 조회합니다.
+> 실제 사진과 후속 질문은 Gemini 3.1 Flash-Lite로 처리합니다. `샘플 체험` 버튼은 API 장애 상황에서도 시연할 수 있는 고정 데모이며, 수거 지점은 위치 권한 허용 후 OpenStreetMap Overpass API의 실제 등록 데이터를 조회합니다.
 
 ## 카메라
 
@@ -34,6 +35,8 @@
 - 촬영한 이미지는 브라우저에서 최대 1600px JPEG로 축소한 뒤 서버를 거쳐 Gemini API에 전달합니다.
 - API 키는 서버 환경 변수에만 보관되며 브라우저 코드에 노출되지 않습니다.
 - 분석이 끝난 이미지를 앱 서버나 데이터베이스에 저장하지 않습니다. Google 무료 등급의 데이터 처리 정책은 Google AI Studio 약관을 함께 확인하세요.
+- 분석 결과에서 `AI에게 더 물어보기`를 열면 뚜껑, 세척, 라벨처럼 이어지는 질문을 할 수 있습니다.
+- 후속 대화는 최근 6개 메시지만 요청 문맥으로 사용하고 앱 서버나 데이터베이스에 저장하지 않습니다.
 
 ## 위치 및 지도
 
@@ -124,7 +127,7 @@ GEMINI_API_KEY=발급받은_API_키
 GEMINI_MODEL=gemini-3.1-flash-lite
 ```
 
-`GEMINI_API_KEY`에는 `NEXT_PUBLIC_` 접두사를 붙이지 마세요. 사진과 키는 `/api/analyze-waste` 서버 경로에서만 처리됩니다. Vercel에서는 `Project → Settings → Environment Variables`에 같은 값을 등록한 뒤 다시 배포합니다.
+`GEMINI_API_KEY`에는 `NEXT_PUBLIC_` 접두사를 붙이지 마세요. 사진과 키는 `/api/analyze-waste`, 후속 대화는 `/api/waste-chat` 서버 경로에서만 처리됩니다. Vercel에서는 `Project → Settings → Environment Variables`에 같은 값을 등록한 뒤 다시 배포합니다.
 
 Gemini 무료 등급은 요청 한도가 있으며, Google 정책에 따라 입력 데이터가 제품 개선에 사용될 수 있습니다. 대회 시연에는 개인 정보나 얼굴이 포함되지 않은 폐기물 사진을 사용하세요.
 
