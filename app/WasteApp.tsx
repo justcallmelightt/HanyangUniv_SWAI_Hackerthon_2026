@@ -148,11 +148,14 @@ function Brand() {
   );
 }
 
-function Header({ onNotification }: { onNotification: () => void }) {
+function Header({ onNotification, onBack }: { onNotification: () => void; onBack: () => void }) {
   return (
     <header className="topbar">
       <Brand />
       <div className="topbar-actions">
+        <button className="back-to-landing" type="button" onClick={onBack}>
+          <ArrowLeft size={14} /> 소개
+        </button>
         <button className="location-pill" type="button">
           <MapPin size={14} strokeWidth={2.4} />
           신림동
@@ -746,26 +749,119 @@ function Scanner({ onClose }: { onClose: () => void }) {
   );
 }
 
-function DesktopRail({ onScan }: { onScan: () => void }) {
+function LandingPage({ onEnter }: { onEnter: () => void }) {
   return (
-    <aside className="desktop-rail">
-      <Brand />
-      <div className="rail-copy">
-        <span>WASTE, SORTED.</span>
-        <h2>버리는 순간까지<br />망설이지 않도록.</h2>
-        <p>가까운 수거함을 찾고, 사진 한 장으로 품목과 배출 방법을 확인하세요.</p>
+    <motion.main
+      className="landing-page"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+    >
+      <header className="landing-header">
+        <Brand />
+        <span>AI 분리배출 가이드</span>
+      </header>
+
+      <section className="landing-hero">
+        <div className="landing-copy">
+          <span className="landing-kicker"><i /> WASTE, SORTED.</span>
+          <h1>버리는 순간까지<br />망설이지 않도록.</h1>
+          <p>가까운 수거함을 찾고, 사진 한 장으로 품목과 배출 방법을 확인하세요.</p>
+          <motion.button
+            className="landing-enter"
+            type="button"
+            whileTap={{ scale: 0.97 }}
+            transition={spring}
+            onClick={onEnter}
+          >
+            <ScanLine size={20} /> 지금 사진으로 확인
+            <ArrowRight size={18} />
+          </motion.button>
+          <div className="landing-stats">
+            <div><strong>3초</strong><span>평균 분석 시간</span></div>
+            <div><strong>4단계</strong><span>맞춤 행동 요령</span></div>
+            <div><strong>내 주변</strong><span>수거함 위치 안내</span></div>
+          </div>
+        </div>
+
+        <div className="landing-preview" aria-hidden="true">
+          <div className="preview-topbar">
+            <span><i /> 물건을 인식하고 있어요</span>
+            <em>92%</em>
+          </div>
+          <div className="preview-workspace">
+            <div className="preview-camera">
+              <div className="preview-corners" />
+              <Bottle size={116} strokeWidth={1.05} />
+              <motion.span
+                animate={{ y: [0, 150, 0] }}
+                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+              />
+            </div>
+            <div className="preview-result">
+              <span><Check size={14} /> 투명 페트병</span>
+              <h2>비우고, 헹구고,<br />라벨을 떼어주세요.</h2>
+              <div><i>1</i><p><strong>내용물 비우기</strong><small>남은 음료를 완전히 비워요</small></p></div>
+              <div><i>2</i><p><strong>가볍게 헹구기</strong><small>물로 한 번만 헹궈도 충분해요</small></p></div>
+              <div><i>3</i><p><strong>라벨 분리하기</strong><small>라벨은 비닐류로 분리해요</small></p></div>
+            </div>
+          </div>
+          <div className="preview-map-strip">
+            <span><MapPin size={17} /> 가장 가까운 수거함</span>
+            <strong>관악구 스마트 분리수거함</strong>
+            <em>120m · 도보 2분</em>
+          </div>
+        </div>
+      </section>
+
+      <footer className="landing-footer">
+        <span>잘 버리는 가장 빠른 방법 · 버림</span>
+        <span>사진 분석 · 위치 찾기 · 행동 요령</span>
+      </footer>
+    </motion.main>
+  );
+}
+
+function ProgramShell({
+  tab,
+  onTabChange,
+  onScan,
+  onPlace,
+  onNotification,
+  onBack,
+}: {
+  tab: Tab;
+  onTabChange: (tab: Tab) => void;
+  onScan: () => void;
+  onPlace: (place: Place) => void;
+  onNotification: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <motion.div
+      className="program-shell"
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 8 }}
+      transition={spring}
+    >
+      <div className="program-frame">
+        <Header onNotification={onNotification} onBack={onBack} />
+        <BottomNav tab={tab} onChange={onTabChange} onScan={onScan} />
+        <AnimatePresence mode="wait">
+          {tab === "home" && <HomeView key="home" onScan={onScan} onMap={() => onTabChange("map")} onPlace={onPlace} />}
+          {tab === "map" && <MapView key="map" onPlace={onPlace} />}
+          {tab === "history" && <HistoryView key="history" onScan={onScan} />}
+          {tab === "profile" && <ProfileView key="profile" />}
+        </AnimatePresence>
       </div>
-      <button type="button" onClick={onScan}><ScanLine size={20} /> 지금 사진으로 확인</button>
-      <div className="rail-stats">
-        <div><strong>3초</strong><span>평균 분석 시간</span></div>
-        <div><strong>4단계</strong><span>맞춤 행동 요령</span></div>
-      </div>
-      <small>잘 버리는 가장 빠른 방법 · 버림</small>
-    </aside>
+    </motion.div>
   );
 }
 
 export function WasteApp() {
+  const [entered, setEntered] = useState(false);
   const [tab, setTab] = useState<Tab>("home");
   const [scannerOpen, setScannerOpen] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
@@ -776,29 +872,41 @@ export function WasteApp() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function leaveProgram() {
+    setScannerOpen(false);
+    setSelectedPlace(null);
+    setNotice(false);
+    setEntered(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   return (
-    <div className="site-shell">
-      <DesktopRail onScan={() => setScannerOpen(true)} />
-      <div className="app-frame">
-        <Header onNotification={() => setNotice(true)} />
-        <AnimatePresence mode="wait">
-          {tab === "home" && <HomeView key="home" onScan={() => setScannerOpen(true)} onMap={() => changeTab("map")} onPlace={setSelectedPlace} />}
-          {tab === "map" && <MapView key="map" onPlace={setSelectedPlace} />}
-          {tab === "history" && <HistoryView key="history" onScan={() => setScannerOpen(true)} />}
-          {tab === "profile" && <ProfileView key="profile" />}
-        </AnimatePresence>
-        <BottomNav tab={tab} onChange={changeTab} onScan={() => setScannerOpen(true)} />
-      </div>
+    <>
+      <AnimatePresence mode="wait">
+        {!entered ? (
+          <LandingPage key="landing" onEnter={() => setEntered(true)} />
+        ) : (
+          <ProgramShell
+            key="program"
+            tab={tab}
+            onTabChange={changeTab}
+            onScan={() => setScannerOpen(true)}
+            onPlace={setSelectedPlace}
+            onNotification={() => setNotice(true)}
+            onBack={leaveProgram}
+          />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
-        {scannerOpen && <Scanner onClose={() => setScannerOpen(false)} />}
-        {selectedPlace && <PlaceSheet place={selectedPlace} onClose={() => setSelectedPlace(null)} />}
-        {notice && (
+        {entered && scannerOpen && <Scanner onClose={() => setScannerOpen(false)} />}
+        {entered && selectedPlace && <PlaceSheet place={selectedPlace} onClose={() => setSelectedPlace(null)} />}
+        {entered && notice && (
           <motion.div className="notice-toast" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={spring}>
             <span><Bell size={17} /></span><p><strong>오늘은 페트병 배출일이에요</strong>오후 8시 전까지 문 앞에 내놓아 주세요.</p><button type="button" aria-label="알림 닫기" onClick={() => setNotice(false)}><X size={17} /></button>
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </>
   );
 }
