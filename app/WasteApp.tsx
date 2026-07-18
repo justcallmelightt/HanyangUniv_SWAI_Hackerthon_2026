@@ -82,6 +82,7 @@ type CollectionStatus = "demo" | "loading" | "success" | "empty" | "error";
 type UserLocation = { lat: number; lng: number; accuracy: number };
 type CollectionMeta = { source: string; radiusKm: number; fetchedAt: string; fallbackServers: number };
 type AuthMode = "login" | "signup";
+type AppNotice = { title: string; body: string };
 
 type WasteAnalysis = {
   status: "confident" | "uncertain";
@@ -116,6 +117,30 @@ const sampleAnalysis: WasteAnalysis = {
   followUp: ["용기 뒷면의 재질 표시가 보이도록 찍어주세요", "흔들리지 않게 물건 가까이에서 찍어주세요"],
   caution: "지역별 배출 기준이 다를 수 있으니 지자체 안내를 함께 확인해주세요.",
   model: "demo",
+};
+
+const guideAnalyses: Record<"glass" | "receipt", WasteAnalysis> = {
+  glass: {
+    status: "confident", itemName: "깨진 유리", material: "유리(파손)", category: "일반쓰레기 · 안전하게 감싸 배출", confidence: 96,
+    summary: "깨진 유리는 재활용 수거함이 아니라 신문지에 두껍게 감싸 일반쓰레기로 배출해요.",
+    evidence: ["날카로운 파손 단면", "원래 용기 형태가 훼손됨", "수거 작업자 부상 위험"],
+    steps: [
+      { title: "두꺼운 종이로 감싸요", description: "목장갑을 끼고 맨손으로 만지지 마세요." },
+      { title: "테이프로 단단히 고정해요", description: "봉투나 상자에 한 번 더 담으면 안전해요." },
+      { title: "깨진 유리 주의라고 표시해요", description: "수거하는 분이 미리 알아볼 수 있게 적어주세요." },
+      { title: "종량제 봉투로 배출해요", description: "유리병 수거함에는 넣지 마세요." },
+    ], followUp: [], caution: "양이 많거나 크면 지자체 배출 기준을 확인하세요.", model: "guide",
+  },
+  receipt: {
+    status: "confident", itemName: "영수증", material: "감열지(코팅 종이)", category: "일반쓰레기 · 재활용 불가", confidence: 94,
+    summary: "대부분의 영수증은 코팅된 감열지라 종이 재활용이 어려워 일반쓰레기로 배출해요.",
+    evidence: ["매끈한 감열 코팅 표면", "열로 글자가 나타나는 인쇄 방식", "일반 종이와 다른 재질"],
+    steps: [
+      { title: "종이 수거함에 넣지 않아요", description: "재활용 공정에서 이물질이 될 수 있어요." },
+      { title: "개인정보 부분을 잘라요", description: "카드번호 등이 보이면 잘게 잘라주세요." },
+      { title: "종량제 봉투로 배출해요", description: "가능하면 전자영수증을 이용해요." },
+    ], followUp: [], caution: "재활용 가능 표시가 있는 친환경 영수증은 표기를 우선 확인하세요.", model: "guide",
+  },
 };
 
 type Place = {
@@ -328,11 +353,13 @@ function Header({
   onBack,
   locationStatus,
   onLocationRequest,
+  notificationActive,
 }: {
   onNotification: () => void;
   onBack: () => void;
   locationStatus: LocationStatus;
   onLocationRequest: () => void;
+  notificationActive: boolean;
 }) {
   const locationLabel = {
     idle: "위치 켜기",
@@ -356,7 +383,7 @@ function Header({
         </button>
         <IconButton label="알림 보기" onClick={onNotification}>
           <Bell size={20} />
-          <span className="notification-dot" />
+          {notificationActive && <span className="notification-dot" />}
         </IconButton>
       </div>
     </header>
@@ -508,6 +535,7 @@ function HomeView({
   collectionPlaces,
   collectionStatus,
   monthCount,
+  onGuide,
 }: {
   onScan: () => void;
   onMap: () => void;
@@ -516,6 +544,7 @@ function HomeView({
   collectionPlaces: Place[];
   collectionStatus: CollectionStatus;
   monthCount: number;
+  onGuide: (analysis: WasteAnalysis) => void;
 }) {
   const nearbyPlaces = userLocation
     ? [...collectionPlaces].sort((a, b) => distanceInMeters(userLocation, a) - distanceInMeters(userLocation, b))
@@ -617,12 +646,12 @@ function HomeView({
           </div>
         </div>
         <div className="guide-grid">
-          <motion.button type="button" whileTap={{ scale: 0.97 }} transition={spring}>
+          <motion.button type="button" whileTap={{ scale: 0.97 }} transition={spring} onClick={() => onGuide(guideAnalyses.glass)}>
             <span className="guide-icon yellow"><GlassWater size={23} /></span>
             <span><strong>깨진 유리</strong><small>신문지에 감싸 일반쓰레기</small></span>
             <ChevronRight size={17} />
           </motion.button>
-          <motion.button type="button" whileTap={{ scale: 0.97 }} transition={spring}>
+          <motion.button type="button" whileTap={{ scale: 0.97 }} transition={spring} onClick={() => onGuide(guideAnalyses.receipt)}>
             <span className="guide-icon lilac"><PackageOpen size={23} /></span>
             <span><strong>영수증</strong><small>코팅된 감열지는 일반쓰레기</small></span>
             <ChevronRight size={17} />
@@ -1032,8 +1061,17 @@ function AuthDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-function ProfileView({ user, loading, onLogin, onSignOut }: { user: User | null; loading: boolean; onLogin: () => void; onSignOut: () => void }) {
+function ProfileView({ user, loading, onLogin, onSignOut, onNeighborhood, onNotificationSettings, onFavorites, onHelp, notificationsEnabled }: {
+  user: User | null; loading: boolean; onLogin: () => void; onSignOut: () => void;
+  onNeighborhood: () => void; onNotificationSettings: () => void; onFavorites: () => void; onHelp: () => void; notificationsEnabled: boolean;
+}) {
   const displayName = user ? authDisplayName(user) : "";
+  const settings = [
+    { id: "neighborhood", label: "내 동네 설정", detail: "현재 위치를 다시 확인해요", icon: <MapPin size={19} />, onClick: onNeighborhood },
+    { id: "notification", label: "분리배출 알림", detail: notificationsEnabled ? "켜짐 · 상단 알림과 연동" : "꺼짐 · 눌러서 다시 켜기", icon: <Bell size={19} />, onClick: onNotificationSettings },
+    { id: "favorites", label: "즐겨찾는 수거함", detail: "가장 가까운 수거함을 열어요", icon: <Recycle size={19} />, onClick: onFavorites },
+    { id: "help", label: "도움말 및 제보", detail: "문의 메일을 작성해요", icon: <CircleHelp size={19} />, onClick: onHelp },
+  ];
   return (
     <motion.main
       className="view profile-view"
@@ -1076,10 +1114,11 @@ function ProfileView({ user, loading, onLogin, onSignOut }: { user: User | null;
         </div>
       </section>
       <div className="settings-list">
-        {["내 동네 설정", "분리배출 알림", "즐겨찾는 수거함", "도움말 및 제보"].map((item, index) => (
-          <button type="button" key={item}>
-            <span>{index === 0 ? <MapPin size={19} /> : index === 1 ? <Bell size={19} /> : index === 2 ? <Recycle size={19} /> : <CircleHelp size={19} />}</span>
-            <strong>{item}</strong>
+        {settings.map((item) => (
+          <button type="button" key={item.id} onClick={item.onClick}>
+            <span>{item.icon}</span>
+            <strong>{item.label}</strong>
+            <small>{item.detail}</small>
             <ChevronRight size={18} />
           </button>
         ))}
@@ -1289,6 +1328,36 @@ function PlaceSheet({ place, onClose }: { place: Place; onClose: () => void }) {
       </motion.aside>
     </>
   );
+}
+
+function GuideSheet({ analysis, onClose }: { analysis: WasteAnalysis; onClose: () => void }) {
+  const controls = useDragControls();
+  const reduceMotion = useReducedMotion();
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  function handleDragEnd(_: unknown, info: { offset: { y: number }; velocity: { y: number } }) {
+    const endpoint = info.offset.y + (info.velocity.y / 1000) * (0.998 / (1 - 0.998));
+    if (endpoint > 190 || info.offset.y > 110) onClose();
+  }
+  return <>
+    <motion.button className="sheet-backdrop" type="button" aria-label="품목 상세 닫기" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduceMotion ? .15 : .2 }} onClick={onClose} />
+    <motion.aside className="place-sheet guide-sheet" role="dialog" aria-modal="true" aria-label={`${analysis.itemName} 상세 설명`}
+      initial={reduceMotion ? { opacity: 0 } : { y: "100%", scale: .98, filter: "blur(10px)" }} animate={reduceMotion ? { opacity: 1 } : { y: 0, scale: 1, filter: "blur(0px)" }} exit={reduceMotion ? { opacity: 0 } : { y: "100%", scale: .98, filter: "blur(8px)" }} transition={reduceMotion ? { duration: .15 } : flickSpring}
+      drag={reduceMotion ? false : "y"} dragControls={controls} dragListener={false} dragConstraints={{ top: 0, bottom: 420 }} dragElastic={{ top: .02, bottom: .55 }} onDragEnd={handleDragEnd}>
+      <button className="sheet-handle-wrap" type="button" aria-label="아래로 밀어 닫기" onPointerDown={(event: ReactPointerEvent) => controls.start(event)}><span className="sheet-handle" /></button>
+      <div className="sheet-status"><span><i /> 헷갈리기 쉬운 품목</span><em>{analysis.material}</em></div>
+      <h2>{analysis.itemName}</h2><p>{analysis.category}</p>
+      <div className="result-summary"><Sparkles size={17} /><p><strong>한 줄 요약</strong>{analysis.summary}</p></div>
+      <div className={`evidence-card ${evidenceOpen ? "open" : ""}`}>
+        <motion.button type="button" aria-expanded={evidenceOpen} whileTap={{ scale: .985 }} transition={spring} onClick={() => setEvidenceOpen((value) => !value)}>
+          <span><ShieldCheck size={17} /> 왜 헷갈릴까요</span><em>{analysis.evidence.length}개 이유</em><ChevronDown size={17} />
+        </motion.button>
+        <AnimatePresence initial={false}>{evidenceOpen && <motion.div className="evidence-detail" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={spring}><ul>{analysis.evidence.map((item) => <li key={item}><i />{item}</li>)}</ul><p><strong>{analysis.caution}</strong></p></motion.div>}</AnimatePresence>
+      </div>
+      <div className="action-plan-head"><span>배출 방법</span><em>단계별 안내</em></div>
+      <div className="action-plan">{analysis.steps.map((step, index) => <div className="action-step" key={step.title}><span className="step-index">{index + 1}</span><div className="step-icon"><Recycle size={20} /></div><div><strong>{step.title}</strong><p>{step.description}</p></div></div>)}</div>
+      <WasteChat analysis={analysis} />
+    </motion.aside>
+  </>;
 }
 
 function WasteChat({ analysis }: { analysis: WasteAnalysis }) {
@@ -1804,6 +1873,12 @@ function ProgramShell({
   latestAnalysis,
   records,
   monthlyStats,
+  onGuide,
+  onNeighborhood,
+  onNotificationSettings,
+  onFavorites,
+  onHelp,
+  notificationsEnabled,
 }: {
   tab: Tab;
   onTabChange: (tab: Tab) => void;
@@ -1825,6 +1900,12 @@ function ProgramShell({
   latestAnalysis: WasteAnalysis | null;
   records: WasteRecord[];
   monthlyStats: MonthlyStats;
+  onGuide: (analysis: WasteAnalysis) => void;
+  onNeighborhood: () => void;
+  onNotificationSettings: () => void;
+  onFavorites: () => void;
+  onHelp: () => void;
+  notificationsEnabled: boolean;
 }) {
   return (
     <motion.div
@@ -1835,14 +1916,14 @@ function ProgramShell({
       transition={spring}
     >
       <div className="program-frame">
-        <Header onNotification={onNotification} onBack={onBack} locationStatus={locationStatus} onLocationRequest={onLocationRequest} />
+        <Header onNotification={onNotification} onBack={onBack} locationStatus={locationStatus} onLocationRequest={onLocationRequest} notificationActive={notificationsEnabled} />
         <BottomNav tab={tab} onChange={onTabChange} onScan={onScan} />
         <AnimatePresence mode="wait">
-          {tab === "home" && <HomeView key="home" onScan={onScan} onMap={() => onTabChange("map")} onPlace={onPlace} userLocation={userLocation} collectionPlaces={collectionPlaces} collectionStatus={collectionStatus} monthCount={monthlyStats.thisMonthCount} />}
+          {tab === "home" && <HomeView key="home" onScan={onScan} onMap={() => onTabChange("map")} onPlace={onPlace} onGuide={onGuide} userLocation={userLocation} collectionPlaces={collectionPlaces} collectionStatus={collectionStatus} monthCount={monthlyStats.thisMonthCount} />}
           {tab === "map" && <MapView key="map" onPlace={onPlace} userLocation={userLocation} locationStatus={locationStatus} onLocationRequest={onLocationRequest} collectionPlaces={collectionPlaces} collectionStatus={collectionStatus} collectionMeta={collectionMeta} onRefreshCollections={onRefreshCollections} />}
           {tab === "ai" && <UnifiedAiView key="ai" analysis={latestAnalysis} userLocation={userLocation} places={collectionPlaces} onScan={onScan} onMap={() => onTabChange("map")} />}
           {tab === "history" && <HistoryView key="history" onScan={onScan} records={records} monthlyStats={monthlyStats} />}
-          {tab === "profile" && <ProfileView key="profile" user={authUser} loading={authLoading} onLogin={onLogin} onSignOut={onSignOut} />}
+          {tab === "profile" && <ProfileView key="profile" user={authUser} loading={authLoading} onLogin={onLogin} onSignOut={onSignOut} onNeighborhood={onNeighborhood} onNotificationSettings={onNotificationSettings} onFavorites={onFavorites} onHelp={onHelp} notificationsEnabled={notificationsEnabled} />}
         </AnimatePresence>
       </div>
     </motion.div>
@@ -1854,7 +1935,9 @@ export function WasteApp() {
   const [tab, setTab] = useState<Tab>("home");
   const [scannerOpen, setScannerOpen] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
-  const [notice, setNotice] = useState(false);
+  const [selectedGuide, setSelectedGuide] = useState<WasteAnalysis | null>(null);
+  const [notice, setNotice] = useState<AppNotice | null>(null);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [authOpen, setAuthOpen] = useState(false);
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
@@ -1957,10 +2040,38 @@ export function WasteApp() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function showNotice(title: string, body: string) { setNotice({ title, body }); }
+  function openTopNotification() {
+    showNotice(notificationsEnabled ? "오늘은 페트병 배출일이에요" : "알림이 꺼져 있어요", notificationsEnabled ? "오후 8시 전까지 문 앞에 내놓아 주세요." : "내 정보에서 분리배출 알림을 다시 켤 수 있어요.");
+  }
+  function openNeighborhoodSetting() {
+    setTab("map");
+    showNotice("내 동네 설정", "현재 위치를 다시 확인하고 주변 수거함을 갱신할게요.");
+    requestLocation();
+  }
+  function toggleNotificationSetting() {
+    setNotificationsEnabled((current) => {
+      const next = !current;
+      showNotice(next ? "분리배출 알림 켜짐" : "분리배출 알림 꺼짐", next ? "상단 알림 버튼과 연동되었어요." : "언제든 내 정보에서 다시 켤 수 있어요.");
+      return next;
+    });
+  }
+  function openFavoriteCollection() {
+    const nearest = userLocation ? [...collectionPlaces].sort((a, b) => distanceInMeters(userLocation, a) - distanceInMeters(userLocation, b))[0] : collectionPlaces[0];
+    setTab("map");
+    if (nearest) setSelectedPlace(nearest);
+    else showNotice("즐겨찾는 수거함", "표시할 지점이 없어요. 위치를 먼저 갱신해 주세요.");
+  }
+  function openHelpAndFeedback() {
+    showNotice("도움말 및 제보", "문의 메일 앱을 열었어요.");
+    window.open("mailto:beorim.help@gmail.com?subject=%5B%EB%B2%84%EB%A6%BC%5D%20%EB%8F%84%EC%9B%80%EB%A7%90%20%EB%B0%8F%20%EC%A0%9C%EB%B3%B4");
+  }
+
   function leaveProgram() {
     setScannerOpen(false);
     setSelectedPlace(null);
-    setNotice(false);
+    setSelectedGuide(null);
+    setNotice(null);
     setEntered(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -2000,7 +2111,7 @@ export function WasteApp() {
             onTabChange={changeTab}
             onScan={() => setScannerOpen(true)}
             onPlace={setSelectedPlace}
-            onNotification={() => setNotice(true)}
+            onNotification={openTopNotification}
             onBack={leaveProgram}
             userLocation={userLocation}
             locationStatus={locationStatus}
@@ -2016,6 +2127,12 @@ export function WasteApp() {
             latestAnalysis={latestAnalysis}
             records={records}
             monthlyStats={monthlyStats}
+            onGuide={setSelectedGuide}
+            onNeighborhood={openNeighborhoodSetting}
+            onNotificationSettings={toggleNotificationSetting}
+            onFavorites={openFavoriteCollection}
+            onHelp={openHelpAndFeedback}
+            notificationsEnabled={notificationsEnabled}
           />
         )}
       </AnimatePresence>
@@ -2024,9 +2141,10 @@ export function WasteApp() {
         {authOpen && <AuthDialog key="auth-dialog" onClose={() => setAuthOpen(false)} />}
         {entered && scannerOpen && <Scanner onClose={() => setScannerOpen(false)} onAnalysis={rememberAnalysis} />}
         {entered && selectedPlace && <PlaceSheet place={selectedPlace} onClose={() => setSelectedPlace(null)} />}
+        {entered && selectedGuide && <GuideSheet analysis={selectedGuide} onClose={() => setSelectedGuide(null)} />}
         {entered && notice && (
           <motion.div className="notice-toast" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={spring}>
-            <span><Bell size={17} /></span><p><strong>오늘은 페트병 배출일이에요</strong>오후 8시 전까지 문 앞에 내놓아 주세요.</p><button type="button" aria-label="알림 닫기" onClick={() => setNotice(false)}><X size={17} /></button>
+            <span><Bell size={17} /></span><p><strong>{notice.title}</strong>{notice.body}</p><button type="button" aria-label="알림 닫기" onClick={() => setNotice(null)}><X size={17} /></button>
           </motion.div>
         )}
       </AnimatePresence>
