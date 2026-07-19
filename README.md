@@ -1,4 +1,6 @@
-# WasteSuperApp(가명) — 버림
+# 버림
+
+한양대학교와 함께하는 2026 전국 청소년 SW·AI 경진대회에 참여하기 위한 시현 프로그램<br>
 
 > 버리는 순간까지 망설이지 않도록.
 
@@ -6,7 +8,7 @@
 
 ## 배포 주소
 
-[WasteSuperApp 실행하기](https://wastesuper.vercel.app)
+[Web 바로가기](https://wastesuper.vercel.app) - 서비스 버전, 해당 버전엔 환경설정 등 모든 설정이 완료되어있습니다
 
 ## 주요 기능
 
