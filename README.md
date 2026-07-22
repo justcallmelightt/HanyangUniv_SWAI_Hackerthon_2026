@@ -79,6 +79,8 @@
 
 ## 실행 방법
 
+[해당 글자를 클릭하면 Web이 바로 실행됩니다.](https://wastesuper.vercel.app)
+
 ### 1. 저장소 내려받기
 
 ```bash
